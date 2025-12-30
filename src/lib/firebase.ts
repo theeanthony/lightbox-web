@@ -1,25 +1,24 @@
-import "server-only"; // Security: Ensures this never bundles to the client
+import "server-only";
 import * as admin from "firebase-admin";
 
-interface FirebaseConfig {
-  projectId: string;
-  clientEmail: string;
-  privateKey: string;
-}
-
-// Format private key correctly for Vercel/Next.js env vars
+// 1. Clean up the private key
+// Vercel and .env files sometimes mess up the "\n" (newline) characters.
+// This logic fixes it automatically.
 const privateKey = process.env.FIREBASE_PRIVATE_KEY
   ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
   : undefined;
 
+// 2. Initialize the App (Singleton Pattern)
+// We check if an app already exists to prevent errors during hot-reloading.
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: privateKey,
-    } as FirebaseConfig),
+    }),
   });
 }
 
+// 3. Export the database instance
 export const db = admin.firestore();
