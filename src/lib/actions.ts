@@ -1,14 +1,14 @@
 "use server";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { db } from "@/lib/firebase";
+import { adminDb } from "@/lib/firebaseAdmin";
 import { randomBytes } from "crypto";
 
 // =========================================================
 // CONFIGURATION
 // Change this to 0 if you want users to pay immediately.
 // Change this to 10 (or 50) to give them a free trial.
-const INITIAL_FREE_CREDITS = 10; 
+const INITIAL_FREE_CREDITS = 5; 
 // =========================================================
 
 export async function getUserDashboardData() {
@@ -22,7 +22,7 @@ export async function getUserDashboardData() {
 
   // 2. Reference the Firestore Document
   // We use the Clerk User ID as the document ID for easy lookup.
-  const userRef = db.collection("users").doc(userId);
+  const userRef = adminDb.collection("users").doc(userId);
   const doc = await userRef.get();
 
   // 3. IF USER EXISTS: Return their data
