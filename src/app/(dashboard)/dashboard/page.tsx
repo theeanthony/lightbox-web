@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { getUserDashboardData } from "@/lib/actions";
 import { Zap, Activity, CreditCard } from "lucide-react";
 import Link from "next/link";
-import { BuyButton } from "@/components/BuyButton"; // <--- 1. Import it
+import { BuyButton } from "@/components/BuyButton";
+import { TestAiButton } from "@/components/TestAiButton"; // <--- 1. Import the new component
 
 export default async function OverviewPage() {
   const userData = await getUserDashboardData();
@@ -11,7 +12,7 @@ export default async function OverviewPage() {
   return (
     <div className="space-y-8">
       
-      {/* 2. Update this Header Section to include the button */}
+      {/* Header Section */}
       <div className="flex items-center justify-between">
         <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground mb-2">Overview</h1>
@@ -19,7 +20,6 @@ export default async function OverviewPage() {
                 Welcome back. You are on the <span className="font-medium text-foreground">Free Plan</span>.
             </p>
         </div>
-        {/* The Button goes here */}
         <BuyButton />
       </div>
 
@@ -29,6 +29,9 @@ export default async function OverviewPage() {
         <Card title="API Status" value="Operational" icon={<Activity />} href="https://status.lightboxlabs.org" external />
         <Card title="Current Spend" value="$0.00" icon={<CreditCard />} href="/dashboard/billing" />
       </div>
+
+      {/* 2. Add the Test Button Here */}
+      <TestAiButton />
 
       {/* Quick Start Guide */}
       <div className="rounded-lg border border-border p-6 bg-card">

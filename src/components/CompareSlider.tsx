@@ -1,37 +1,41 @@
 "use client";
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { GripVertical } from "lucide-react";
+
+import { ReactCompareSlider, ReactCompareSliderImage } from 'react-compare-slider';
 
 export default function CompareSlider() {
-  const [sliderPosition, setSliderPosition] = useState(50);
-
   return (
-    <div className="relative w-full max-w-3xl h-[400px] overflow-hidden rounded-xl border border-gray-800 cursor-ew-resize select-none"
-         onMouseMove={(e) => {
-           const rect = e.currentTarget.getBoundingClientRect();
-           setSliderPosition(((e.clientX - rect.left) / rect.width) * 100);
-         }}>
+    // Container: Portrait aspect ratio (3/4) to fit phone screenshots better
+    <div className="relative w-full max-w-lg aspect-[3/4] rounded-xl overflow-hidden border border-white/10 shadow-2xl mx-auto">
       
-      {/* Background Layer (After / Enhanced) */}
-      <img src="/after.jpg" alt="Enhanced" className="absolute inset-0 w-full h-full object-cover" />
-      
-      {/* Foreground Layer (Before / Blurry) - Clipped */}
-      <div className="absolute inset-0 w-full h-full object-cover" 
-           style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}>
-        <img src="/before.jpg" alt="Original" className="absolute inset-0 w-full h-full object-cover" />
+      <ReactCompareSlider
+        // 1. THIS IS THE FIX: Allows moving the slider just by hovering
+        changePositionOnHover={true} 
+        
+        itemOne={
+          <ReactCompareSliderImage 
+            src="/before.jpg" 
+            srcSet="/before.jpg" 
+            alt="Original Image" 
+          />
+        }
+        itemTwo={
+          <ReactCompareSliderImage 
+            src="/after.jpg" 
+            srcSet="/after.jpg" 
+            alt="Enhanced Image" 
+          />
+        }
+        className="h-full w-full object-cover"
+      />
+
+      {/* Labels (Pinned to corners) */}
+      <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-md text-white text-xs font-bold px-3 py-1.5 rounded-full border border-white/10 z-10 pointer-events-none">
+        Original
       </div>
 
-      {/* The Handle */}
-      <div className="absolute top-0 bottom-0 w-1 bg-white/50 backdrop-blur-md z-10"
-           style={{ left: `${sliderPosition}%` }}>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-black p-1 rounded-full shadow-lg">
-          <GripVertical size={20} />
-        </div>
+      <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md text-black text-xs font-bold px-3 py-1.5 rounded-full border border-black/10 z-10 pointer-events-none">
+        Lightbox AI
       </div>
-      
-      <div className="absolute top-4 left-4 bg-black/50 text-white px-2 py-1 text-xs rounded">Original</div>
-      <div className="absolute top-4 right-4 bg-white/90 text-black px-2 py-1 text-xs rounded font-bold">Lightbox AI</div>
     </div>
   );
 }
