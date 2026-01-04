@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin"; 
 import { FieldValue } from "firebase-admin/firestore";
 
-// 🔧 CONFIG: Your Modal URL
+// 🔧 CONFIG
 const MODAL_URL = "https://theeanthony--lightbox-engine-upscale-router.modal.run";
 
 export async function POST(req: Request) {
@@ -20,64 +20,72 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Insufficient credits" }, { status: 402 });
     }
 
-    // 2. Get Dynamic Params from Request
+    // 2. Parse Inputs
     const body = await req.json();
     const { 
-      imageUrl, 
-      mode = "face", 
-      scale = 2, 
-      face_blend = 0.5,
-      // 🟢 NEW: Capture the advanced inputs from Frontend
-      lighting_prompt, 
-      force_subject, 
-      pro_mode 
+      imageUrl, mode = "face", scale = 2, face_blend = 0.5,
+      lighting_prompt, force_subject, pro_mode,
+      client_meta
     } = body;
 
-    if (!imageUrl) return NextResponse.json({ error: "Image URL required" }, { status: 400 });
+    // 3. Create "Pending" Record
+    const generationsRef = userRef.collection("generations");
+    const newDoc = generationsRef.doc();
+    const jobId = newDoc.id;
+    
+    await newDoc.set({
+      id: jobId,
+      userId,
+      status: "processing", // UI will show spinner immediately
+      originalUrl: imageUrl,
+      mode,
+      scale,
+      createdAt: FieldValue.serverTimestamp(),
+      params: { face_blend, lighting_prompt, force_subject, pro_mode },
+      meta: client_meta
+    });
 
-    // 3. TRANSLATION LAYER: Frontend Params -> Modal Params
+    // 4. Calculate Creativity
     let creativity = 0.65;
     if (mode === "face") {
       creativity = 1.0 - Number(face_blend);
       creativity = Math.max(0.1, Math.min(0.9, creativity));
     }
 
-    // 4. Call Your Custom Modal Engine
-    const response = await fetch(MODAL_URL, {
+    // 5. 🔥 FIRE & FORGET: Trigger Modal (Don't await result)
+    // We pass the 'jobId' and 'webhookUrl' so Modal knows where to report back
+    fetch(MODAL_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "X-Webhook-Secret": process.env.MODAL_WEBHOOK_SECRET! 
+      },
       body: JSON.stringify({
+        // Standard Params
         image_url: imageUrl,
         engine: mode === "universal" ? "fidelity" : "generative",
         scale_factor: Number(scale),
-        creativity: creativity,
+        creativity,
         enhance_face: mode === "face",
-        
-        // 🟢 NEW: Pass the advanced logic to the Engine
-        // Logic: Use the UI toggle OR force it if scale is >= 3
         pro_mode: pro_mode || (Number(scale) >= 3),
-        
-        // Logic: Use user input OR fallback to default
         lighting_prompt: lighting_prompt || "studio lighting, neutral background",
-        force_subject: force_subject || ""
+        force_subject: force_subject || "",
+        
+        // 🟢 NEW: Async Context
+        job_id: jobId,
+        user_id: userId,
+        webhook_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/modal`
       }),
-    });
+    }).catch(err => console.error("Failed to trigger Modal:", err));
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Engine Failed: ${errorText}`);
-    }
-
-    const output = await response.json();
-
-    // 5. Deduct Credit
+    // 6. Deduct Credit Immediately (Refund later if it fails)
     await userRef.update({ credits: FieldValue.increment(-1) });
 
+    // Return the Job ID immediately
     return NextResponse.json({ 
-      original: imageUrl,
-      enhanced: output.download_url,
-      meta: output.billing,
-      remainingCredits: credits - 1 
+      success: true,
+      jobId: jobId,
+      status: "queued"
     });
 
   } catch (error: any) {

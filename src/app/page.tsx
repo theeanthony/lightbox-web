@@ -1,6 +1,10 @@
 import Link from "next/link";
 import CompareSlider from "@/components/CompareSlider";
-import { Zap, Shield, ScanFace } from "lucide-react"; 
+import { Zap, Shield, ScanFace, Check, ArrowRight, Code2 } from "lucide-react"; 
+
+// Placeholders - Replace with your best demo shots
+const DEMO_BEFORE = "before.jpg";
+const DEMO_AFTER = "after.jpg";
 
 export default function Home() {
   return (
@@ -35,11 +39,30 @@ export default function Home() {
           Restore texture, details, and truth with our B2B Developer API.
         </p>
         
-        {/* Slider Component */}
-        <CompareSlider />
+        {/* --- UPDATED SLIDER SECTION --- */}
+        {/* Wrapped in a specific aspect-ratio container to control size */}
+        <div className="relative w-full max-w-5xl mx-auto mb-16 group">
+            {/* Glow Effect */}
+            <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-1000" />
+            
+            {/* Slider Container */}
+            <div className="relative rounded-xl border border-white/10 bg-[#0A0A0A] shadow-2xl overflow-hidden aspect-[4/5] md:aspect-[2/1]">
+                <CompareSlider 
+                    before={DEMO_BEFORE} 
+                    after={DEMO_AFTER} 
+                    className="h-full w-full" 
+                    // Note: We don't pass isModal here, so it defaults to 'object-cover' which fills this box perfectly
+                />
+            </div>
+            
+            {/* Floating Badge */}
+            <div className="absolute bottom-4 right-4 bg-black/80 backdrop-blur border border-white/10 px-3 py-1.5 rounded-full text-xs text-neutral-400 font-mono hidden md:block">
+                Model: <span className="text-white">RealVisXL_v4</span>
+            </div>
+        </div>
         
         {/* Code Snippet */}
-        <div className="mt-16 w-full max-w-2xl bg-gray-900/50 border border-gray-800 rounded-lg p-4 text-left font-mono text-sm overflow-x-auto">
+        <div className="w-full max-w-2xl bg-gray-900/50 border border-gray-800 rounded-lg p-4 text-left font-mono text-sm overflow-x-auto">
           <div className="flex gap-2 mb-3">
             <div className="w-3 h-3 rounded-full bg-red-500/20"></div>
             <div className="w-3 h-3 rounded-full bg-yellow-500/20"></div>
@@ -51,8 +74,8 @@ export default function Home() {
         </div>
       </div>
 
-{/* --- FEATURES GRID --- */}
-<div className="py-32 bg-neutral-900/30 border-y border-neutral-800">
+      {/* --- FEATURES GRID --- */}
+      <div className="py-32 bg-neutral-900/30 border-y border-neutral-800">
         <div className="max-w-7xl mx-auto px-8">
           <div className="grid md:grid-cols-3 gap-20 text-center md:text-left">
             

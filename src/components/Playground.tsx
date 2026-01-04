@@ -1,27 +1,51 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { 
   Loader2, UploadCloud, Sliders, Zap, Sparkles, 
-  Aperture, Play, CheckCircle2, Clock, X, Image as ImageIcon
+  Aperture, Play, X, Image as ImageIcon,
+  Download, Maximize2, FileText, Monitor, Check, Clock, 
+  ThumbsUp, ThumbsDown
 } from "lucide-react";
 import CompareSlider from "./CompareSlider";
 
 // 🔧 CONFIGURATION
 const R2_PUBLIC_DOMAIN = "https://pub-07de09a82f474da9b43b3ffbb54fb5f5.r2.dev"; 
+const EXPIRATION_HOURS = 24;
+
+const isJobExpired = (createdAt?: string) => {
+  if (!createdAt) return false;
+  const created = new Date(createdAt).getTime();
+  const now = Date.now();
+  const diffInHours = (now - created) / (1000 * 60 * 60);
+  return diffInHours > EXPIRATION_HOURS;
+};
+
+const formatBytes = (bytes: number, decimals = 1) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
 
 interface Job {
   id: string;
-  file: File;
-  status: "idle" | "uploading" | "processing" | "done" | "error"; 
-  originalUrl?: string;
+  file?: File; 
+  status: "idle" | "uploading" | "processing" | "done" | "error" | "expired";
+  originalUrl: string;
   resultUrl?: string;
   error?: string;
   step?: string;
+  originalDims?: { w: number; h: number };
+  resultDims?: { w: number; h: number };
+  createdAt?: string;
+  feedback?: "like" | "dislike" | null;
+  progress?: number; // 🟢 ADD THIS LINE
 }
 
 export default function Playground() {
-  // --- STATE ---
   const [mode, setMode] = useState<"face" | "universal">("face");
   const [scale, setScale] = useState(2);
   const [faceBlend, setFaceBlend] = useState(0.5);
@@ -31,18 +55,124 @@ export default function Playground() {
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
+  const [zoomedJob, setZoomedJob] = useState<Job | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- HANDLERS ---
+  // --- 1. FETCH HISTORY (Reusable Function) ---
+  const fetchHistory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/history", { 
+        cache: 'no-store', // 🔴 Critical: Never use browser cache
+        next: { revalidate: 0 } // 🔴 Critical: Tell Next.js to fetch fresh data
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        
+        // SMART MERGE: Update existing jobs with new status, append new ones
+        setJobs(prevJobs => {
+           const newJobs = [...prevJobs];
+           
+           data.jobs.forEach((serverJob: any) => {
+              const expired = isJobExpired(serverJob.createdAt);
+              const status = expired ? 'expired' : serverJob.status;
+              
+              const existingIndex = newJobs.findIndex(j => j.id === serverJob.id);
+              
+              if (existingIndex !== -1) {
+                 // Update existing job (keep local properties like 'file' if they exist)
+                 newJobs[existingIndex] = {
+                    ...newJobs[existingIndex],
+                    status: status,
+                    resultUrl: serverJob.resultUrl,
+                    resultDims: serverJob.resultDims,
+                    createdAt: serverJob.createdAt,
+                    originalDims: serverJob.originalDims || newJobs[existingIndex].originalDims,
+                    feedback: serverJob.feedback || newJobs[existingIndex].feedback
+                 };
+              } else {
+                 // Add new job from history
+                 newJobs.push({
+                    id: serverJob.id,
+                    status: status,
+                    originalUrl: serverJob.originalUrl,
+                    resultUrl: serverJob.resultUrl,
+                    resultDims: serverJob.resultDims,
+                    originalDims: serverJob.originalDims,
+                    createdAt: serverJob.createdAt,
+                    feedback: serverJob.feedback || null
+                 });
+              }
+           });
+           
+           // Sort by CreatedAt Descending
+           return newJobs.sort((a, b) => 
+              new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+           );
+        });
+      }
+    } catch (e) {
+      console.error("Failed to load history", e);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  // Initial Load
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  // --- 2. POLLING MECHANISM ---
+  // If we have any 'processing' jobs, check for updates every 3 seconds
+  useEffect(() => {
+    const hasProcessing = jobs.some(j => j.status === 'processing');
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+       fetchHistory();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [jobs, fetchHistory]);
+
+
+  // --- FEEDBACK HANDLER ---
+  const handleFeedback = async (jobId: string, vote: "like" | "dislike") => {
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, feedback: vote } : j));
+    if (zoomedJob && zoomedJob.id === jobId) {
+       setZoomedJob(prev => prev ? { ...prev, feedback: vote } : null);
+    }
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, vote })
+      });
+    } catch (e) { console.error(e); }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const newJobs: Job[] = Array.from(e.target.files).map((file) => ({
-        id: Math.random().toString(36).substr(2, 9),
-        file: file,
-        status: "idle",
-        originalUrl: URL.createObjectURL(file)
-      }));
-      setJobs((prev) => [...prev, ...newJobs]);
+      const newJobs: Job[] = Array.from(e.target.files).map((file) => {
+        const url = URL.createObjectURL(file);
+        const job: Job = {
+          id: Math.random().toString(36).substr(2, 9), // Temp ID
+          file: file,
+          status: "idle",
+          originalUrl: url,
+          feedback: null
+        };
+        const img = new Image();
+        img.onload = () => {
+          updateJob(job.id, { originalDims: { w: img.width, h: img.height } });
+        };
+        img.src = url;
+        return job;
+      });
+      setJobs((prev) => [...newJobs, ...prev]);
     }
   };
 
@@ -59,10 +189,13 @@ export default function Playground() {
     setIsBatchRunning(false);
   };
 
+  // --- 3. FIXED PROCESS FUNCTION (Async Safe) ---
   const processSingleJob = async (job: Job) => {
+    if (!job.file) return; 
+    
     try {
-      // 1. Upload
-      updateJob(job.id, { status: "uploading", step: "Securing Asset..." });
+      // Step A: Upload
+      updateJob(job.id, { status: "uploading", step: "Uploading..." });
       
       const signRes = await fetch("/api/upload", {
         method: "POST",
@@ -80,8 +213,8 @@ export default function Playground() {
 
       const publicUrl = `${R2_PUBLIC_DOMAIN}/${filename}`;
       
-      // 2. Process
-      updateJob(job.id, { status: "processing", step: "Spinning up GPU...", originalUrl: publicUrl });
+      // Step B: Call Engine (Async)
+      updateJob(job.id, { status: "processing", step: "Queued...", originalUrl: publicUrl });
 
       const enhanceRes = await fetch("/api/enhance", {
         method: "POST",
@@ -91,14 +224,31 @@ export default function Playground() {
           mode, scale, face_blend: faceBlend,
           pro_mode: proMode,
           lighting_prompt: lighting,
-          force_subject: subject
+          force_subject: subject,
+          client_meta: {
+            fileSize: job.file.size,
+            fileType: job.file.type,
+            originalWidth: job.originalDims?.w || 0,
+            originalHeight: job.originalDims?.h || 0,
+          }
         }),
       });
 
       if (!enhanceRes.ok) throw new Error("Engine Busy");
+      
+      // 🟢 KEY FIX HERE:
+      // The API returns { status: "queued", jobId: "..." }
+      // We do NOT have resultUrl yet. We just update the ID and wait for polling.
       const data = await enhanceRes.json();
 
-      updateJob(job.id, { status: "done", resultUrl: data.enhanced, step: "Complete" });
+      setJobs(prev => prev.map(j => j.id === job.id ? { 
+         ...j, 
+         id: data.jobId, // Swap temp ID for real DB ID
+         status: "processing",
+         step: "Enhancing...",
+      } : j));
+
+      // Polling useEffect will take over from here...
 
     } catch (err: any) {
       console.error(err);
@@ -110,252 +260,192 @@ export default function Playground() {
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...updates } : j)));
   };
 
+  const downloadImage = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `enhanced_${filename}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      window.open(url, '_blank');
+    }
+  };
+
   return (
-    <div className="flex flex-col lg:flex-row gap-8 min-h-[calc(100vh-100px)]">
+    <div className="flex flex-col lg:flex-row gap-8 text-foreground pb-20">
       
-      {/* --- SIDEBAR: CONTROLS --- */}
+      {/* SIDEBAR */}
       <aside className="lg:w-80 flex-shrink-0 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Playground</h1>
+          <p className="text-muted-foreground text-sm">
+             Batch test your model with different parameters.
+          </p>
+        </div>
         <div className="sticky top-8 space-y-6">
-          
-          {/* Panel: Engine Config */}
-          <div className="bg-neutral-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
-            <div className="flex items-center gap-2 mb-6">
-              <Sliders className="w-4 h-4 text-purple-400" />
-              <h2 className="text-sm font-bold tracking-wider text-white uppercase">Configuration</h2>
+          <div className="rounded-lg border border-border bg-card p-5 shadow-sm space-y-6">
+            <div className="flex items-center gap-2 border-b border-border pb-4">
+              <Sliders className="w-4 h-4 text-primary" />
+              <h2 className="text-sm font-semibold text-foreground">Configuration</h2>
             </div>
-
-            {/* Mode Switch */}
-            <div className="space-y-3 mb-6">
-              <label className="text-xs font-medium text-neutral-500 uppercase tracking-widest">Engine Mode</label>
-              <div className="grid grid-cols-2 gap-1 bg-black/50 p-1 rounded-lg border border-white/5">
-                <button 
-                  onClick={() => setMode("face")}
-                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-medium transition-all ${
-                    mode === "face" 
-                      ? "bg-purple-600/20 text-purple-300 shadow-[0_0_15px_rgba(147,51,234,0.3)] border border-purple-500/50" 
-                      : "text-neutral-500 hover:text-white"
-                  }`}
-                >
-                  <Sparkles className="w-3 h-3"/> Generative
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-foreground">Engine Mode</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setMode("face")} className={`flex flex-col items-center justify-center gap-2 py-3 px-2 rounded-md text-xs font-medium border transition-all ${mode === "face" ? "bg-primary/5 border-primary text-primary" : "bg-background border-input text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
+                  <Sparkles className="w-4 h-4"/> Generative
                 </button>
-                <button 
-                  onClick={() => setMode("universal")}
-                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-medium transition-all ${
-                    mode === "universal" 
-                      ? "bg-blue-600/20 text-blue-300 shadow-[0_0_15px_rgba(37,99,235,0.3)] border border-blue-500/50" 
-                      : "text-neutral-500 hover:text-white"
-                  }`}
-                >
-                  <Aperture className="w-3 h-3"/> Fidelity
+                <button onClick={() => setMode("universal")} className={`flex flex-col items-center justify-center gap-2 py-3 px-2 rounded-md text-xs font-medium border transition-all ${mode === "universal" ? "bg-primary/5 border-primary text-primary" : "bg-background border-input text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
+                  <Aperture className="w-4 h-4"/> Fidelity
                 </button>
               </div>
             </div>
-
-            {/* Sliders Area */}
-            <div className="space-y-6">
-              {/* Scale */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                   <label className="text-xs font-medium text-neutral-500 uppercase tracking-widest">Upscale Factor</label>
-                   <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${proMode ? 'bg-yellow-500/20 text-yellow-200 border-yellow-500/50' : 'bg-neutral-800 text-neutral-500 border-transparent'}`}>
-                        {proMode ? '8K PRO' : '4K STD'}
-                      </span>
-                      <button 
-                        onClick={() => setProMode(!proMode)}
-                        className={`w-8 h-4 rounded-full transition-colors relative ${proMode ? 'bg-yellow-500' : 'bg-neutral-700'}`}
-                      >
-                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${proMode ? 'left-4.5' : 'left-0.5'}`} />
-                      </button>
-                   </div>
-                </div>
-                <input 
-                  type="range" min="1" max="4" step="1" 
-                  value={scale} 
-                  onChange={(e) => setScale(Number(e.target.value))}
-                  className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-white hover:accent-purple-400 transition-colors"
-                />
-                <div className="flex justify-between text-[10px] text-neutral-600 font-mono">
-                  <span>1x</span><span>2x</span><span>3x</span><span>4x</span>
-                </div>
-              </div>
-
-              {/* Creativity */}
-              {mode === "face" && (
-                <div className="space-y-3">
-                  <div className="flex justify-between items-end">
-                    <label className="text-xs font-medium text-neutral-500 uppercase tracking-widest">Identity Blend</label>
-                    <span className="text-xs font-mono text-purple-400">{Math.round(faceBlend * 100)}%</span>
-                  </div>
-                  <input 
-                    type="range" min="0" max="1" step="0.1" 
-                    value={faceBlend} 
-                    onChange={(e) => setFaceBlend(Number(e.target.value))}
-                    className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-white hover:accent-purple-400 transition-colors"
-                  />
-                  <div className="flex justify-between text-[10px] text-neutral-600">
-                    <span>AI Imagination</span>
-                    <span>Strict Reality</span>
-                  </div>
-                </div>
-              )}
+            <div className="space-y-4">
+               <div className="flex justify-between items-center"><label className="text-sm font-medium text-foreground">Upscale Factor</label><button onClick={() => setProMode(!proMode)} className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all border ${proMode ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-muted text-muted-foreground border-transparent hover:bg-muted/80"}`}><Zap className="w-3 h-3" /> {proMode ? '8K Pro' : '4K Std'}</button></div>
+               <input type="range" min="1" max="4" step="1" value={scale} onChange={(e) => setScale(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
+               <div className="flex justify-between text-[10px] text-muted-foreground font-mono px-1"><span>1x</span><span>2x</span><span>3x</span><span>4x</span></div>
             </div>
+            {mode === "face" && (
+              <div className="space-y-4 pt-2 border-t border-dashed border-border">
+                <div className="flex justify-between items-center"><label className="text-sm font-medium text-foreground">Identity Blend</label><span className="text-xs font-mono text-muted-foreground">{Math.round(faceBlend * 100)}%</span></div>
+                <input type="range" min="0" max="1" step="0.1" value={faceBlend} onChange={(e) => setFaceBlend(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
+                <div className="flex justify-between text-[10px] text-muted-foreground px-1"><span>Creative</span><span>Strict</span></div>
+              </div>
+            )}
           </div>
-
-          {/* Panel: Prompt Engineering */}
-          <div className="bg-neutral-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-xl">
-             <div className="flex items-center gap-2 mb-4">
-                <Zap className="w-4 h-4 text-yellow-500" />
-                <h2 className="text-sm font-bold tracking-wider text-white uppercase">Refinement</h2>
-             </div>
-             <div className="space-y-3">
-                <div>
-                   <input 
-                      type="text" 
-                      placeholder="Lighting (e.g. Cinematic, Neon)"
-                      value={lighting}
-                      onChange={(e) => setLighting(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-neutral-600 focus:border-purple-500/50 focus:outline-none focus:ring-1 focus:ring-purple-500/20 transition-all"
-                   />
-                </div>
-                <div>
-                   <input 
-                      type="text" 
-                      placeholder="Force Subject (e.g. Cat, Car)"
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-neutral-600 focus:border-purple-500/50 focus:outline-none focus:ring-1 focus:ring-purple-500/20 transition-all"
-                   />
-                </div>
-             </div>
+          <div className="rounded-lg border border-border bg-card p-5 shadow-sm space-y-4">
+             <div className="flex items-center gap-2 mb-2"><Zap className="w-4 h-4 text-amber-500" /><h2 className="text-sm font-semibold text-foreground">Prompting</h2></div>
+             <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Lighting Style</label><input type="text" placeholder="e.g. Cinematic, Neon..." value={lighting} onChange={(e) => setLighting(e.target.value)} className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"/></div>
+             <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Subject Focus</label><input type="text" placeholder="e.g. Cat, Face..." value={subject} onChange={(e) => setSubject(e.target.value)} className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring"/></div>
           </div>
         </div>
       </aside>
 
-      {/* --- MAIN: WORKSPACE --- */}
-      <main className="flex-1 min-w-0">
-        
-        {/* Toolbar */}
-        <div className="flex items-center justify-between mb-6 bg-neutral-900/30 border border-white/5 p-2 rounded-xl backdrop-blur-md">
-           <div className="flex items-center gap-4 px-2">
-              <span className="text-xs font-mono text-neutral-500">QUEUE: <span className="text-white">{jobs.length}</span></span>
-              <div className="h-4 w-px bg-white/10"></div>
-              <span className="text-xs font-mono text-neutral-500">EST. TIME: <span className="text-white">~3s</span></span>
+      {/* WORKSPACE */}
+      <main className="flex-1 min-w-0 flex flex-col pt-14">
+        <div className="flex items-center justify-between mb-6 bg-card border border-border p-3 rounded-lg shadow-sm">
+           <div className="flex items-center gap-6 px-4">
+              <div className="flex flex-col"><span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Queue</span><span className="text-sm font-mono font-medium text-foreground">{jobs.length}</span></div>
+              <div className="w-px h-8 bg-border"></div>
+              <div className="flex flex-col"><span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Est. Time</span><span className="text-sm font-mono font-medium text-foreground">~{jobs.filter(j => j.status === 'idle').length * 3}s</span></div>
            </div>
-
-           <div className="flex items-center gap-2">
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-medium text-white transition-all"
-              >
-                <UploadCloud className="w-3 h-3" /> Add Photos
-              </button>
+           <div className="flex items-center gap-3">
+              <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-background hover:bg-muted border border-input rounded-md text-sm font-medium text-foreground transition-colors"><UploadCloud className="w-4 h-4" /> Add Photos</button>
               <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
-
-              <button
-                onClick={runBatch}
-                disabled={isBatchRunning || jobs.length === 0}
-                className={`flex items-center gap-2 px-6 py-2 rounded-lg text-xs font-bold transition-all shadow-lg ${
-                  isBatchRunning 
-                     ? "bg-neutral-800 text-neutral-500 cursor-not-allowed"
-                     : jobs.length > 0
-                        ? "bg-white text-black hover:bg-neutral-200 hover:scale-105"
-                        : "bg-neutral-800 text-neutral-600 cursor-not-allowed"
-                }`}
-              >
-                {isBatchRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 fill-current" />}
-                {isBatchRunning ? "PROCESSING..." : "RUN BATCH"}
-              </button>
+              <button onClick={runBatch} disabled={isBatchRunning || jobs.filter(j => j.status === 'idle').length === 0} className={`flex items-center gap-2 px-6 py-2 rounded-md text-sm font-medium transition-all shadow-sm ${isBatchRunning ? "bg-muted text-muted-foreground cursor-not-allowed" : jobs.filter(j => j.status === 'idle').length > 0 ? "bg-primary text-primary-foreground hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}>{isBatchRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}{isBatchRunning ? "Processing..." : "Run Batch"}</button>
            </div>
         </div>
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-20">
-          {jobs.map((job) => (
-            <div key={job.id} className="group relative bg-black border border-white/10 rounded-2xl overflow-hidden shadow-2xl transition-all hover:border-white/20">
-              
-              {/* Card Header */}
-              <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 bg-gradient-to-b from-black/80 to-transparent">
-                 <div className="flex flex-col">
-                    <span className="text-xs font-bold text-white tracking-tight drop-shadow-md">{job.file.name}</span>
-                    <span className="text-[10px] font-mono text-neutral-400 uppercase">{job.status === 'idle' ? 'Pending' : job.step || job.status}</span>
-                 </div>
-                 
-                 {job.status === 'idle' && (
-                    <button onClick={() => removeJob(job.id)} className="p-1.5 bg-black/50 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 rounded-full backdrop-blur-md transition-colors border border-white/10">
-                       <X className="w-3 h-3" />
-                    </button>
-                 )}
-              </div>
-
-              {/* Status Indicators */}
-              <div className="absolute bottom-4 right-4 z-20">
-                 {job.status === "uploading" && <div className="px-3 py-1 bg-blue-500/20 border border-blue-500/30 backdrop-blur-md text-blue-200 text-[10px] font-bold rounded-full flex items-center gap-2 animate-pulse"><UploadCloud className="w-3 h-3" /> SYNCING</div>}
-                 {job.status === "processing" && <div className="px-3 py-1 bg-purple-500/20 border border-purple-500/30 backdrop-blur-md text-purple-200 text-[10px] font-bold rounded-full flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> ENHANCING</div>}
-                 {job.status === "done" && <div className="px-3 py-1 bg-green-500/20 border border-green-500/30 backdrop-blur-md text-green-200 text-[10px] font-bold rounded-full flex items-center gap-2 shadow-[0_0_10px_rgba(34,197,94,0.2)]"><CheckCircle2 className="w-3 h-3" /> COMPLETE</div>}
-                 {job.status === "error" && <div className="px-3 py-1 bg-red-500/20 border border-red-500/30 backdrop-blur-md text-red-200 text-[10px] font-bold rounded-full flex items-center gap-2"><X className="w-3 h-3" /> FAILED</div>}
-              </div>
-
-              {/* Viewport */}
-              <div className="relative aspect-[4/5] bg-neutral-900/50 w-full">
-                {job.status === "done" && job.originalUrl && job.resultUrl ? (
-                  <CompareSlider before={job.originalUrl} after={job.resultUrl} />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center relative">
-                     {/* Preview BG */}
-                     {job.originalUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img 
-                           src={job.originalUrl} 
-                           alt="Preview" 
-                           className={`absolute inset-0 w-full h-full object-contain transition-all duration-700 ${job.status === 'idle' ? 'opacity-40 grayscale-[0.5]' : 'opacity-20 blur-sm scale-105'}`}
-                        />
-                     )}
-                     
-                     {/* Overlay Loader */}
-                     {job.status === 'processing' && (
-                        <div className="relative z-10 flex flex-col items-center gap-4">
-                           <div className="relative">
-                              <div className="w-16 h-16 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin"></div>
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                 <Sparkles className="w-6 h-6 text-purple-400 animate-pulse" />
-                              </div>
-                           </div>
-                        </div>
-                     )}
-
-                     {job.status === 'idle' && (
-                        <div className="relative z-10 p-4 bg-black/60 backdrop-blur-md rounded-xl border border-white/10 text-center">
-                           <Clock className="w-6 h-6 text-neutral-400 mx-auto mb-2" />
-                           <p className="text-xs text-neutral-300 font-medium">Ready to Process</p>
-                        </div>
-                     )}
+        {/* GRID */}
+        {isLoadingHistory ? (
+           <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {jobs.map((job) => (
+              <div key={job.id} className="group flex flex-col bg-card border border-border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all">
+                
+                {/* Card Header */}
+                <div className="px-4 py-3 border-b border-border flex justify-between items-center bg-muted/10">
+                  <div className="flex flex-col">
+                      <span className="text-sm font-medium text-foreground truncate max-w-[200px]">{job.file?.name || `Job ${job.id.substr(0, 6)}`}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase">
+                         {job.status === 'idle' && 'Waiting'}{job.status === 'uploading' && 'Uploading'}{job.status === 'processing' && 'Enhancing'}{job.status === 'done' && 'Complete'}{job.status === 'error' && 'Failed'}{job.status === 'expired' && 'Expired'}
+                      </span>
                   </div>
-                )}
-              </div>
-            </div>
-          ))}
-          
-          {/* Empty State */}
-          {jobs.length === 0 && (
-            <div className="col-span-full border border-dashed border-neutral-800 rounded-3xl h-96 flex flex-col items-center justify-center bg-neutral-900/20 text-center p-8">
-              <div className="w-16 h-16 bg-neutral-800/50 rounded-2xl flex items-center justify-center mb-6">
-                <ImageIcon className="w-8 h-8 text-neutral-600" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Your Queue is Empty</h3>
-              <p className="text-neutral-500 max-w-sm mb-8 text-sm leading-relaxed">
-                Upload photos to the batch queue. Adjust the engine settings on the left to customize the output.
-              </p>
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="px-6 py-3 bg-white text-black rounded-full font-bold text-sm hover:bg-neutral-200 transition-colors"
-              >
-                Select Photos
-              </button>
-            </div>
-          )}
+                  {job.status === 'idle' || job.status === 'error' || job.status === 'expired' ? (
+                      <button onClick={() => removeJob(job.id)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="w-4 h-4" /></button>
+                  ) : (
+                      <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${job.status === 'processing' ? 'bg-purple-100 text-purple-700' : job.status === 'done' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                         {job.status === 'processing' && <Loader2 className="w-3 h-3 animate-spin" />}{job.status === 'done' && <Check className="w-3 h-3" />}{job.status.toUpperCase()}
+                      </div>
+                  )}
+                </div>
+
+                {/* Viewport */}
+                <div className="relative aspect-[3/2] bg-muted/20 w-full flex items-center justify-center overflow-hidden border-b border-border">
+                  {job.status === 'expired' ? (
+                    <div className="flex flex-col items-center justify-center text-center p-6 text-muted-foreground"><Clock className="w-8 h-8 mb-2 opacity-50" /><span className="text-sm font-semibold">Image Expired</span><span className="text-xs max-w-[200px] mt-1">Privacy Policy: Images are auto-deleted after 24 hours.</span></div>
+                  ) : job.status === "done" && job.originalUrl && job.resultUrl ? (
+                    <CompareSlider before={job.originalUrl} after={job.resultUrl} />
+                  ) : (
+                    <>
+                      <img src={job.originalUrl} alt="Preview" className={`absolute inset-0 w-full h-full object-contain p-4 transition-all duration-700 ${job.status === 'idle' ? 'opacity-100' : 'opacity-50 blur-sm scale-95'}`}/>
+                      {job.status === 'processing' && (
+        <div className="relative z-10 flex flex-col items-center gap-3 bg-card/90 backdrop-blur px-6 py-4 rounded-xl border border-border shadow-sm">
+           <div className="relative w-16 h-16 flex items-center justify-center">
+              {/* Spinner Background */}
+              <div className="absolute inset-0 rounded-full border-4 border-muted/30"></div>
+              {/* Spinner */}
+              <Loader2 className="w-16 h-16 text-primary animate-spin absolute" />
+              {/* Percentage Text */}
+              <span className="text-[10px] font-bold text-foreground z-10">
+                 {job.progress || 0}%
+              </span>
+           </div>
+           <span className="text-xs font-medium text-foreground">
+              Enhancing...
+           </span>
         </div>
+      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-3 bg-card flex justify-between items-center h-12">
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {job.file && <div className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /><span>{formatBytes(job.file.size)}</span></div>}
+                    {(job.originalDims || job.resultDims) && (
+                      <div className="flex items-center gap-1.5"><Monitor className="w-3.5 h-3.5" /><span>{job.originalDims?.w || '?'}x{job.originalDims?.h || '?'}</span>{job.resultDims && <><span className="text-muted-foreground/50">→</span><span className="font-medium text-green-600">{job.resultDims.w}x{job.resultDims.h}</span></>}</div>
+                    )}
+                  </div>
+                  {job.status === 'done' && job.resultUrl && !isJobExpired(job.createdAt) && (
+                    <div className="flex items-center gap-2"><button onClick={() => setZoomedJob(job)} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-md transition-colors" title="Zoom"><Maximize2 className="w-4 h-4" /></button><button onClick={() => downloadImage(job.resultUrl!, job.file?.name || 'enhanced.png')} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-md transition-colors" title="Download"><Download className="w-4 h-4" /></button></div>
+                  )}
+                </div>
+              </div>
+            ))}
+            
+            {jobs.length === 0 && (
+              <div className="col-span-full border-2 border-dashed border-border rounded-xl h-96 flex flex-col items-center justify-center bg-muted/10 text-center p-8">
+                <div className="w-12 h-12 bg-background rounded-xl flex items-center justify-center mb-4 border border-input shadow-sm"><ImageIcon className="w-6 h-6 text-muted-foreground" /></div>
+                <h3 className="text-base font-semibold text-foreground mb-1">Your Queue is Empty</h3>
+                <p className="text-sm text-muted-foreground max-w-sm mb-6">Drag & drop photos here or use the button below.</p>
+                <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-background border border-input text-foreground rounded-md text-sm font-medium hover:bg-muted transition-colors shadow-sm">Select Photos</button>
+              </div>
+            )}
+          </div>
+        )}
       </main>
+
+      {/* --- ZOOM MODAL --- */}
+      {zoomedJob && zoomedJob.originalUrl && zoomedJob.resultUrl && (
+        <div className="fixed inset-0 z-50 bg-background/90 backdrop-blur-sm flex items-center justify-center p-4">
+           <div className="relative w-full h-full max-w-[95vw] max-h-[95vh] bg-card border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-border bg-background">
+                 <div className="flex flex-col"><h3 className="font-semibold text-foreground">{zoomedJob.file?.name || 'Enhanced Image'}</h3><span className="text-xs text-muted-foreground font-mono">{zoomedJob.originalDims?.w}x{zoomedJob.originalDims?.h} → {zoomedJob.resultDims?.w}x{zoomedJob.resultDims?.h}</span></div>
+                 
+                 <div className="flex items-center gap-4">
+                    {/* FEEDBACK CONTROLS */}
+                    <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border border-border">
+                       <button onClick={() => handleFeedback(zoomedJob.id, 'like')} className={`p-2 rounded-md transition-colors ${zoomedJob.feedback === 'like' ? 'bg-green-100 text-green-700' : 'hover:bg-muted text-muted-foreground'}`}><ThumbsUp className="w-4 h-4" /></button>
+                       <div className="w-px h-4 bg-border" />
+                       <button onClick={() => handleFeedback(zoomedJob.id, 'dislike')} className={`p-2 rounded-md transition-colors ${zoomedJob.feedback === 'dislike' ? 'bg-red-100 text-red-700' : 'hover:bg-muted text-muted-foreground'}`}><ThumbsDown className="w-4 h-4" /></button>
+                    </div>
+                    <div className="h-6 w-px bg-border mx-2" />
+                    <div className="flex items-center gap-2"><button onClick={() => downloadImage(zoomedJob.resultUrl!, zoomedJob.file?.name || 'enhanced.png')} className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:opacity-90 transition-colors flex items-center gap-2"><Download className="w-3.5 h-3.5" /> Download</button><button onClick={() => setZoomedJob(null)} className="p-1.5 hover:bg-muted text-muted-foreground rounded-md transition-colors"><X className="w-5 h-5" /></button></div>
+                 </div>
+              </div>
+              <div className="flex-1 min-h-0 bg-muted/20 relative p-4 flex items-center justify-center overflow-hidden [&_img]:max-h-[85vh] [&_img]:w-auto [&_img]:mx-auto [&_img]:object-contain">
+                 <div className="relative inline-block shadow-lg"><CompareSlider before={zoomedJob.originalUrl} after={zoomedJob.resultUrl} isModal={true} /></div>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }
