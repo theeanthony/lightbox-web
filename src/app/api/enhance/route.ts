@@ -2,14 +2,28 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin"; 
 import { FieldValue } from "firebase-admin/firestore";
-
+import { ratelimit } from "@/lib/ratelimit";
+import { getAuthenticatedUser } from "@/lib/apiAuth";
 // 🔧 CONFIG
 const MODAL_URL = "https://theeanthony--lightbox-engine-upscale-router.modal.run";
 
 export async function POST(req: Request) {
   try {
-    const { userId } = await auth();
-    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+    // 2. 🟢 REPLACE CLERK AUTH WITH DUAL AUTH
+    const userId = await getAuthenticatedUser(req);
+    
+    if (!userId) {
+      return new NextResponse("Unauthorized: Invalid Session or API Key", { status: 401 });
+    }
+
+    // 3. Rate Limit Check (Works for both Browser & API Key users)
+    const { success, limit, reset, remaining } = await ratelimit.limit(userId);
+    if (!success) {
+      return new NextResponse("Too Many Requests", { 
+        status: 429,
+        headers: { "Retry-After": reset.toString() } 
+      });
+    }
 
     // 1. Check Credits
     const userRef = adminDb.collection("users").doc(userId);
