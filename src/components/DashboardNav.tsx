@@ -1,56 +1,57 @@
-"use client"; // <--- This allows us to check the URL
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Key, CreditCard, BarChart3, Settings } from "lucide-react";
+import { CreditCard, Home, Settings, Zap, FlaskConical } from "lucide-react"; // <--- 1. Import Icon
+
+const items = [
+  {
+    title: "Overview",
+    href: "/dashboard",
+    icon: Home,
+  },
+  {
+    title: "Playground", // <--- 2. Add this new item
+    href: "/dashboard/playground",
+    icon: FlaskConical,
+  },
+  {
+    title: "Usage",
+    href: "/dashboard/usage",
+    icon: Zap,
+  },
+  {
+    title: "Billing",
+    href: "/dashboard/billing",
+    icon: CreditCard,
+  },
+  {
+    title: "Settings",
+    href: "/dashboard/settings",
+    icon: Settings,
+  },
+];
 
 export function DashboardNav() {
-  const pathname = usePathname();
-
-  // Helper to check if a link is active
-  const isActive = (path: string) => pathname === path;
+  const path = usePathname();
 
   return (
-    <div className="px-3">
-        {/* Organization Section */}
-        <div className="mb-6">
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-3">
-                Organization
-            </h2>
-            <nav className="space-y-1">
-                <NavItem href="/dashboard" icon={<LayoutDashboard size={18} />} label="Overview" active={isActive("/dashboard")} />
-                <NavItem href="/dashboard/settings" icon={<Settings size={18} />} label="Settings" active={isActive("/dashboard/settings")} />
-                <NavItem href="/dashboard/usage" icon={<BarChart3 size={18} />} label="Usage" active={isActive("/dashboard/usage")} />
-                <NavItem href="/dashboard/billing" icon={<CreditCard size={18} />} label="Billing" active={isActive("/dashboard/billing")} />
-            </nav>
-        </div>
-
-        {/* User Section */}
-        <div>
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-3">
-                User
-            </h2>
-            <nav className="space-y-1">
-                <NavItem href="/dashboard/keys" icon={<Key size={18} />} label="API Keys" active={isActive("/dashboard/keys")} />
-            </nav>
-        </div>
-    </div>
-  );
-}
-
-// Sub-component for individual links
-function NavItem({ href, icon, label, active }: any) {
-  return (
-    <Link 
-      href={href} 
-      className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-        active 
-          ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold" 
-          : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-      }`}
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-    </Link>
+    <nav className="grid items-start gap-2">
+      {items.map((item, index) => {
+        const Icon = item.icon;
+        return (
+          <Link
+            key={index}
+            href={item.href}
+            className={`group flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground ${
+              path === item.href ? "bg-accent text-accent-foreground" : "transparent"
+            }`}
+          >
+            <Icon className="mr-2 h-4 w-4" />
+            <span>{item.title}</span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

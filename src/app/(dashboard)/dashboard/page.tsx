@@ -3,7 +3,8 @@ import { getUserDashboardData } from "@/lib/actions";
 import { Zap, Activity, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { BuyButton } from "@/components/BuyButton";
-import { TestAiButton } from "@/components/TestAiButton"; // <--- 1. Import the new component
+// import { TestAiButton } from "@/components/TestAiButton"; // <--- 1. Import the new component
+import ImageUploader from "@/components/ImageUploader";
 
 export default async function OverviewPage() {
   const userData = await getUserDashboardData();
@@ -31,7 +32,7 @@ export default async function OverviewPage() {
       </div>
 
       {/* 2. Add the Test Button Here */}
-      <TestAiButton />
+      {/* <ImageUploader /> */}
 
       {/* Quick Start Guide */}
       <div className="rounded-lg border border-border p-6 bg-card">

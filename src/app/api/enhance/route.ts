@@ -10,54 +10,45 @@ const replicate = new Replicate({
 
 export async function POST(req: Request) {
   try {
-    // 1. Authenticate
     const { userId } = await auth();
-    if (!userId) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
+    if (!userId) return new NextResponse("Unauthorized", { status: 401 });
 
-    // 2. Check Credits
+    // 1. Check Credits (Standard check)
     const userRef = adminDb.collection("users").doc(userId);
     const userSnap = await userRef.get();
-    
-    if (!userSnap.exists) {
-        return new NextResponse("User not found", { status: 404 });
-    }
-
-    const userData = userSnap.data();
-    const credits = userData?.credits || 0;
+    const credits = userSnap.data()?.credits || 0;
 
     if (credits < 1) {
       return NextResponse.json({ error: "Insufficient credits" }, { status: 402 });
     }
 
-    // 3. Get Image from Request
+    // 2. Get Dynamic Params from the Request
     const body = await req.json();
-    const { imageUrl } = body;
+    const { 
+      imageUrl, 
+      mode = "face",       // Default to face
+      scale = 2,           // Default to 2x
+      face_blend = 0.5     // Default to 0.5
+    } = body;
 
-    if (!imageUrl) {
-        return NextResponse.json({ error: "Image URL is required" }, { status: 400 });
-    }
+    if (!imageUrl) return NextResponse.json({ error: "Image URL required" }, { status: 400 });
 
-    // 4. Run YOUR Replicate Model
-    // Version ID from your curl command: e61dff0ddcba40f0375d6f6a67fb8930bcc3f47b417113a323f4c154549767af
+    // 3. Run Replicate with DYNAMIC Inputs
     const output = await replicate.run(
       "theeanthony/upscale-test:e61dff0ddcba40f0375d6f6a67fb8930bcc3f47b417113a323f4c154549767af",
       {
         input: {
-          image: imageUrl,   // The image to upscale
-          scale: 2,          // Default from your screenshot
-          face_blend: 0.5    // 0.5 balances AI restoration with original details
+          image: imageUrl,   
+          mode: mode,
+          scale: Number(scale),
+          face_blend: Number(face_blend)
         }
       }
     );
 
-    // 5. Deduct Credit
-    await userRef.update({
-      credits: FieldValue.increment(-1)
-    });
+    // 4. Deduct Credit
+    await userRef.update({ credits: FieldValue.increment(-1) });
 
-    // 6. Return Result
     return NextResponse.json({ 
       original: imageUrl,
       enhanced: output, 
