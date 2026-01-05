@@ -37,9 +37,15 @@ export async function POST(req: Request) {
     // 2. Parse Inputs
     const body = await req.json();
     const { 
-      imageUrl, mode = "face", scale = 2, face_blend = 0.5,
-      lighting_prompt, force_subject, pro_mode,
-      client_meta
+      imageUrl, 
+      mode = "face", 
+      scale = 2, 
+      face_blend = 0.5,
+      // 🟢 FIX: Default to empty string if missing
+      lighting_prompt = "", 
+      force_subject = "", 
+      pro_mode = false,
+      client_meta = {}
     } = body;
 
     // 3. Create "Pending" Record

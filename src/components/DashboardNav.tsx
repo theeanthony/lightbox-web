@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CreditCard, Home, Settings, Zap, FlaskConical } from "lucide-react"; // <--- 1. Import Icon
+import { CreditCard, Home, Settings, Zap, FlaskConical,Key } from "lucide-react"; // <--- 1. Import Icon
 
 const items = [
   {
@@ -24,6 +24,11 @@ const items = [
     title: "Billing",
     href: "/dashboard/billing",
     icon: CreditCard,
+  },
+  {
+    title: "API Keys",
+    href: "/dashboard/keys",
+    icon: Key, 
   },
   {
     title: "Settings",
