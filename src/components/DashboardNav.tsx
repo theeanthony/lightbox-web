@@ -15,11 +15,11 @@ const items = [
     href: "/dashboard/playground",
     icon: FlaskConical,
   },
-  {
-    title: "Usage",
-    href: "/dashboard/usage",
-    icon: Zap,
-  },
+  // {
+  //   title: "Usage",
+  //   href: "/dashboard/usage",
+  //   icon: Zap,
+  // },
   {
     title: "Billing",
     href: "/dashboard/billing",
