@@ -68,9 +68,12 @@ export default function Home() {
             <div className="w-3 h-3 rounded-full bg-yellow-500/20"></div>
             <div className="w-3 h-3 rounded-full bg-green-500/20"></div>
           </div>
-          <p className="text-purple-400">curl <span className="text-white">-X POST</span> https://api.lightboxlabs.org/v1/enhance \</p>
+          {/* 🟢 UPDATED: Correct Domain */}
+          <p className="text-purple-400">curl <span className="text-white">-X POST</span> https://platform.lightboxlabs.org/api/enhance \</p>
           <p className="text-gray-400 pl-4">-H <span className="text-green-400">"Authorization: Bearer sk_live_..."</span> \</p>
-          <p className="text-gray-400 pl-4">-d <span className="text-yellow-200">'{"{"}"image": "...", "fidelity": 0.5{"}"}'</span></p>
+          <p className="text-gray-400 pl-4">-H <span className="text-green-400">"Content-Type: application/json"</span> \</p>
+          {/* 🟢 UPDATED: Correct Params (imageUrl, scale) */}
+          <p className="text-gray-400 pl-4">-d <span className="text-yellow-200">'{"{"}"imageUrl": "https://...", "scale": 2{"}"}'</span></p>
         </div>
       </div>
 

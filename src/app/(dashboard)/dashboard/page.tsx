@@ -38,10 +38,12 @@ export default async function OverviewPage() {
       <div className="rounded-lg border border-border p-6 bg-card">
         <h3 className="font-semibold mb-4 text-foreground">Quick Start</h3>
         <div className="bg-muted p-4 rounded-md font-mono text-sm overflow-x-auto text-muted-foreground">
-            curl -X POST https://api.lightboxlabs.org/v1/upscale \<br/>
-            &nbsp;&nbsp;-H "Authorization: Bearer {userData.apiKey}" \<br/>
-            &nbsp;&nbsp;-d '{"{"}"image": "https://..."{"}"}'
-        </div>
+    {/* 🟢 CHANGE THIS URL to platform.lightboxlabs.org/api/enhance */}
+    curl -X POST https://platform.lightboxlabs.org/api/enhance \<br/>
+    &nbsp;&nbsp;-H "Authorization: Bearer {'sk_live_...'}" \<br/> 
+    &nbsp;&nbsp;-H "Content-Type: application/json" \<br/>
+    &nbsp;&nbsp;-d '{"{"}"imageUrl": "https://..."{"}"}'
+</div>
       </div>
     </div>
   );
