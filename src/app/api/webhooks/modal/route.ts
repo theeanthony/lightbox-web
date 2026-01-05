@@ -17,15 +17,10 @@ export async function POST(req: Request) {
       return new NextResponse("Missing Data", { status: 400 });
     }
 
-    const jobRef = adminDb
-      .collection("users")
-      .doc(userId)
-      .collection("generations")
-      .doc(jobId);
-      
+    const jobRef = adminDb.collection("users").doc(userId).collection("generations").doc(jobId);
     const userRef = adminDb.collection("users").doc(userId);
 
-    // 2. PROCESSING: Fast update (No transaction needed)
+    // 2. PROCESSING: Update progress bar
     if (status === "processing") {
       await jobRef.update({
         status: "processing",
@@ -35,37 +30,36 @@ export async function POST(req: Request) {
       return new NextResponse("Ack", { status: 200 });
     }
 
-    // 3. SUCCESS: Transactional Update (Deduct Credit + Mark Done)
+    // 3. SUCCESS: Mark done (🟢 CHANGED: DO NOT CHARGE HERE)
+    // The user was already charged in the API route.
     if (status === "success") {
-      await adminDb.runTransaction(async (t) => {
-        // Optional: Read user credits to ensure they didn't go negative
-        // const userDoc = await t.get(userRef);
-        // const currentCredits = userDoc.data()?.credits || 0;
-
-        // A. Charge the user
-        t.update(userRef, { 
-          credits: FieldValue.increment(-1) 
-        });
-
-        // B. Deliver the result
-        t.update(jobRef, {
-          status: "done",
-          progress: 100,
-          resultUrl: resultUrl,
-          resultDims: meta || null,
-          completedAt: FieldValue.serverTimestamp(),
-        });
+      await jobRef.update({
+        status: "done",
+        progress: 100,
+        resultUrl: resultUrl,
+        resultDims: meta || null,
+        completedAt: FieldValue.serverTimestamp(),
       });
-      
       return new NextResponse("Ack", { status: 200 });
     }
 
-    // 4. ERROR: Mark as failed (Do NOT deduct credit)
+    // 4. ERROR: Refund the user (🟢 CHANGED: ADD REFUND)
+    // Since we charged them to start, we must pay them back if it fails.
     if (status === "error" || status === "failed") {
-      await jobRef.update({
-        status: "error",
-        error: error || "Processing failed",
+      await adminDb.runTransaction(async (t) => {
+        // Refund the credit
+        t.update(userRef, { 
+          credits: FieldValue.increment(1) 
+        });
+
+        // Mark job as error
+        t.update(jobRef, {
+          status: "error",
+          error: error || "Processing failed",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       });
+      
       return new NextResponse("Ack", { status: 200 });
     }
 
