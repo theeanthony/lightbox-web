@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Copy, Check, AlertTriangle, Key } from "lucide-react";
+import { Plus, Trash2, Copy, Check, AlertTriangle, Key, X } from "lucide-react";
 
 interface ApiKey {
   id: string;
@@ -15,12 +15,12 @@ export default function KeysPage() {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  
+  // 🟢 NEW: Track which key is currently being asked for confirmation
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Load Keys on Mount
   useEffect(() => {
-    fetch("/api/keys")
-      .then((res) => res.json())
-      .then((data) => setKeys(data.keys || []));
+    fetch("/api/keys").then((res) => res.json()).then((data) => setKeys(data.keys || []));
   }, []);
 
   const createKey = async () => {
@@ -32,17 +32,14 @@ export default function KeysPage() {
       });
       const data = await res.json();
       setKeys((prev) => [data.meta, ...prev]);
-      setNewKey(data.secretKey); // 🟢 Show the secret key once
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+      setNewKey(data.secretKey);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const deleteKey = async (id: string) => {
     setKeys((prev) => prev.filter((k) => k.id !== id));
     await fetch(`/api/keys?id=${id}`, { method: "DELETE" });
+    setDeleteConfirmId(null); // Reset
   };
 
   const copyToClipboard = () => {
@@ -58,53 +55,27 @@ export default function KeysPage() {
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground mb-4">API Keys</h1>
-          <p className="text-muted-foreground">
-            Manage authentication keys for your applications.
-          </p>
+          <p className="text-muted-foreground">Manage authentication keys for your applications.</p>
         </div>
-        <button
-          onClick={createKey}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-        >
+        <button onClick={createKey} disabled={loading} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
           {loading ? <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" /> : <Plus className="w-4 h-4" />}
           Create New Key
         </button>
       </div>
 
-      {/* 🟢 SECRET KEY REVEAL (Only visible after creation) */}
       {newKey && (
         <div className="bg-green-500/10 border border-green-500/20 p-6 rounded-lg animate-in fade-in slide-in-from-top-4">
-          <div className="flex items-center gap-2 text-green-600 font-semibold mb-2">
-            <Check className="w-5 h-5" /> Key Created Successfully
-          </div>
-          <p className="text-sm text-muted-foreground mb-3">
-            Copy this key now. You will <strong className="text-foreground">not</strong> be able to see it again!
-          </p>
+          <div className="flex items-center gap-2 text-green-600 font-semibold mb-2"><Check className="w-5 h-5" /> Key Created Successfully</div>
+          <p className="text-sm text-muted-foreground mb-3">Copy this key now. You will <strong className="text-foreground">not</strong> be able to see it again!</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 bg-background border border-green-500/30 p-3 rounded-md font-mono text-sm text-foreground break-all">
-              {newKey}
-            </code>
-            <button
-              onClick={copyToClipboard}
-              className="p-3 bg-background border border-green-500/30 rounded-md hover:bg-green-500/10 transition-colors"
-            >
+            <code className="flex-1 bg-background border border-green-500/30 p-3 rounded-md font-mono text-sm text-foreground break-all">{newKey}</code>
+            <button onClick={copyToClipboard} className="p-3 bg-background border border-green-500/30 rounded-md hover:bg-green-500/10 transition-colors">
               {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
             </button>
           </div>
         </div>
       )}
 
-      {/* WARNING BOX */}
-      <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-lg flex gap-3 text-orange-600 dark:text-orange-400">
-        <AlertTriangle size={20} className="shrink-0 mt-0.5" />
-        <div className="text-sm">
-          <p className="font-semibold mb-1">Security Notice</p>
-          Do not share your API key. If a key is leaked, revoke it immediately.
-        </div>
-      </div>
-
-      {/* KEY LIST */}
       <div className="border border-border rounded-lg bg-card overflow-hidden">
         {keys.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
@@ -125,20 +96,23 @@ export default function KeysPage() {
               {keys.map((key) => (
                 <tr key={key.id} className="group hover:bg-muted/20 transition-colors">
                   <td className="px-6 py-4 font-medium text-foreground">{key.name}</td>
-                  <td className="px-6 py-4 font-mono text-muted-foreground">
-                    {key.prefix}...********
-                  </td>
-                  <td className="px-6 py-4 text-muted-foreground">
-                    {new Date(key.createdAt).toLocaleDateString()}
-                  </td>
+                  <td className="px-6 py-4 font-mono text-muted-foreground">{key.prefix}...********</td>
+                  <td className="px-6 py-4 text-muted-foreground">{new Date(key.createdAt).toLocaleDateString()}</td>
                   <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => deleteKey(key.id)}
-                      className="text-muted-foreground hover:text-red-500 transition-colors p-2"
-                      title="Revoke Key"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    
+                    {/* 🟢 NEW: Confirmation Logic */}
+                    {deleteConfirmId === key.id ? (
+                        <div className="flex items-center justify-end gap-2 animate-in slide-in-from-right-2 fade-in">
+                            <span className="text-xs text-red-500 font-medium">Are you sure?</span>
+                            <button onClick={() => deleteKey(key.id)} className="text-red-600 hover:bg-red-100 p-1.5 rounded transition-colors"><Check className="w-4 h-4" /></button>
+                            <button onClick={() => setDeleteConfirmId(null)} className="text-muted-foreground hover:bg-muted p-1.5 rounded transition-colors"><X className="w-4 h-4" /></button>
+                        </div>
+                    ) : (
+                        <button onClick={() => setDeleteConfirmId(key.id)} className="text-muted-foreground hover:text-red-500 transition-colors p-2" title="Revoke Key">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                    )}
+
                   </td>
                 </tr>
               ))}

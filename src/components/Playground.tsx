@@ -5,7 +5,7 @@ import {
   Loader2, UploadCloud, Sliders, Zap, Sparkles, 
   Aperture, Play, X, Image as ImageIcon,
   Download, Maximize2, FileText, Monitor, Check, Clock, 
-  ThumbsUp, ThumbsDown
+  ThumbsUp, ThumbsDown, Coins // 🟢 Added Coins icon
 } from "lucide-react";
 import CompareSlider from "./CompareSlider";
 
@@ -42,10 +42,11 @@ interface Job {
   resultDims?: { w: number; h: number };
   createdAt?: string;
   feedback?: "like" | "dislike" | null;
-  progress?: number; // 🟢 ADD THIS LINE
+  progress?: number; 
 }
 
-export default function Playground() {
+// 🟢 Updated Props to accept credits
+export default function Playground({ initialCredits = 0 }: { initialCredits?: number }) {
   const [mode, setMode] = useState<"face" | "universal">("face");
   const [scale, setScale] = useState(2);
   const [faceBlend, setFaceBlend] = useState(0.5);
@@ -58,14 +59,19 @@ export default function Playground() {
   const [zoomedJob, setZoomedJob] = useState<Job | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   
+  // 🟢 Local Credit State
+  const [credits, setCredits] = useState(initialCredits);
+  useEffect(() => {
+    setCredits(initialCredits);
+  }, [initialCredits]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- 1. FETCH HISTORY (Reusable Function) ---
   const fetchHistory = useCallback(async () => {
     try {
       const res = await fetch("/api/history", { 
-        cache: 'no-store', // 🔴 Critical: Never use browser cache
-        next: { revalidate: 0 } // 🔴 Critical: Tell Next.js to fetch fresh data
+        cache: 'no-store', 
+        next: { revalidate: 0 } 
       });
       
       if (res.ok) {
@@ -82,7 +88,7 @@ export default function Playground() {
               const existingIndex = newJobs.findIndex(j => j.id === serverJob.id);
               
               if (existingIndex !== -1) {
-                 // Update existing job (keep local properties like 'file' if they exist)
+                 // Update existing job
                  newJobs[existingIndex] = {
                     ...newJobs[existingIndex],
                     status: status,
@@ -90,10 +96,11 @@ export default function Playground() {
                     resultDims: serverJob.resultDims,
                     createdAt: serverJob.createdAt,
                     originalDims: serverJob.originalDims || newJobs[existingIndex].originalDims,
-                    feedback: serverJob.feedback || newJobs[existingIndex].feedback
+                    feedback: serverJob.feedback || newJobs[existingIndex].feedback,
+                    progress: serverJob.progress // Sync progress from server
                  };
               } else {
-                 // Add new job from history
+                 // Add new job
                  newJobs.push({
                     id: serverJob.id,
                     status: status,
@@ -102,12 +109,12 @@ export default function Playground() {
                     resultDims: serverJob.resultDims,
                     originalDims: serverJob.originalDims,
                     createdAt: serverJob.createdAt,
-                    feedback: serverJob.feedback || null
+                    feedback: serverJob.feedback || null,
+                    progress: serverJob.progress
                  });
               }
            });
            
-           // Sort by CreatedAt Descending
            return newJobs.sort((a, b) => 
               new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
            );
@@ -126,7 +133,6 @@ export default function Playground() {
   }, [fetchHistory]);
 
   // --- 2. POLLING MECHANISM ---
-  // If we have any 'processing' jobs, check for updates every 3 seconds
   useEffect(() => {
     const hasProcessing = jobs.some(j => j.status === 'processing');
     if (!hasProcessing) return;
@@ -139,7 +145,6 @@ export default function Playground() {
   }, [jobs, fetchHistory]);
 
 
-  // --- FEEDBACK HANDLER ---
   const handleFeedback = async (jobId: string, vote: "like" | "dislike") => {
     setJobs(prev => prev.map(j => j.id === jobId ? { ...j, feedback: vote } : j));
     if (zoomedJob && zoomedJob.id === jobId) {
@@ -189,10 +194,19 @@ export default function Playground() {
     setIsBatchRunning(false);
   };
 
-  // --- 3. FIXED PROCESS FUNCTION (Async Safe) ---
+  // --- 3. PROCESS FUNCTION ---
   const processSingleJob = async (job: Job) => {
+    // 🟢 CREDIT CHECK
+    if (credits <= 0) {
+        alert("You are out of credits! Please upgrade to continue.");
+        return;
+    }
+
     if (!job.file) return; 
     
+    // 🟢 DEDUCT LOCAL CREDIT (Visual feedback)
+    setCredits(prev => Math.max(0, prev - 1));
+
     try {
       // Step A: Upload
       updateJob(job.id, { status: "uploading", step: "Uploading..." });
@@ -213,7 +227,7 @@ export default function Playground() {
 
       const publicUrl = `${R2_PUBLIC_DOMAIN}/${filename}`;
       
-      // Step B: Call Engine (Async)
+      // Step B: Call Engine
       updateJob(job.id, { status: "processing", step: "Queued...", originalUrl: publicUrl });
 
       const enhanceRes = await fetch("/api/enhance", {
@@ -236,22 +250,19 @@ export default function Playground() {
 
       if (!enhanceRes.ok) throw new Error("Engine Busy");
       
-      // 🟢 KEY FIX HERE:
-      // The API returns { status: "queued", jobId: "..." }
-      // We do NOT have resultUrl yet. We just update the ID and wait for polling.
       const data = await enhanceRes.json();
 
       setJobs(prev => prev.map(j => j.id === job.id ? { 
          ...j, 
-         id: data.jobId, // Swap temp ID for real DB ID
+         id: data.jobId,
          status: "processing",
          step: "Enhancing...",
       } : j));
 
-      // Polling useEffect will take over from here...
-
     } catch (err: any) {
       console.error(err);
+      // 🟢 REFUND CREDIT ON ERROR (Visual only)
+      setCredits(prev => prev + 1);
       updateJob(job.id, { status: "error", error: err.message || "Error", step: "Failed" });
     }
   };
@@ -287,6 +298,25 @@ export default function Playground() {
              Batch test your model with different parameters.
           </p>
         </div>
+
+        {/* 🟢 CREDIT CARD UI */}
+        <div className={`rounded-lg border p-4 flex items-center justify-between shadow-sm transition-colors ${credits > 0 ? "bg-primary/5 border-primary/20" : "bg-red-50 border-red-200"}`}>
+            <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-full ${credits > 0 ? "bg-primary/10 text-primary" : "bg-red-100 text-red-600"}`}>
+                    <Coins className="w-5 h-5" />
+                </div>
+                <div>
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Balance</div>
+                    <div className={`text-lg font-bold ${credits > 0 ? "text-foreground" : "text-red-600"}`}>
+                        {credits} <span className="text-xs font-normal text-muted-foreground">Credits</span>
+                    </div>
+                </div>
+            </div>
+            <a href="/dashboard/billing" className="text-xs font-medium text-primary hover:underline">
+                Top Up
+            </a>
+        </div>
+
         <div className="sticky top-8 space-y-6">
           <div className="rounded-lg border border-border bg-card p-5 shadow-sm space-y-6">
             <div className="flex items-center gap-2 border-b border-border pb-4">
@@ -336,7 +366,25 @@ export default function Playground() {
            <div className="flex items-center gap-3">
               <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-background hover:bg-muted border border-input rounded-md text-sm font-medium text-foreground transition-colors"><UploadCloud className="w-4 h-4" /> Add Photos</button>
               <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
-              <button onClick={runBatch} disabled={isBatchRunning || jobs.filter(j => j.status === 'idle').length === 0} className={`flex items-center gap-2 px-6 py-2 rounded-md text-sm font-medium transition-all shadow-sm ${isBatchRunning ? "bg-muted text-muted-foreground cursor-not-allowed" : jobs.filter(j => j.status === 'idle').length > 0 ? "bg-primary text-primary-foreground hover:opacity-90" : "bg-muted text-muted-foreground cursor-not-allowed"}`}>{isBatchRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}{isBatchRunning ? "Processing..." : "Run Batch"}</button>
+              
+              {/* 🟢 CREDIT GATED BUTTON */}
+              <button 
+                  onClick={runBatch} 
+                  disabled={isBatchRunning || jobs.filter(j => j.status === 'idle').length === 0 || credits <= 0} 
+                  className={`flex items-center gap-2 px-6 py-2 rounded-md text-sm font-medium transition-all shadow-sm 
+                    ${credits <= 0 
+                        ? "bg-red-100 text-red-600 cursor-not-allowed border border-red-200" 
+                        : isBatchRunning 
+                            ? "bg-muted text-muted-foreground cursor-not-allowed" 
+                            : jobs.filter(j => j.status === 'idle').length > 0 
+                                ? "bg-primary text-primary-foreground hover:opacity-90" 
+                                : "bg-muted text-muted-foreground cursor-not-allowed"
+                    }`}
+              >
+                  {isBatchRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+                  {credits <= 0 ? "No Credits" : isBatchRunning ? "Processing..." : "Run Batch"}
+              </button>
+
            </div>
         </div>
 
@@ -375,22 +423,22 @@ export default function Playground() {
                     <>
                       <img src={job.originalUrl} alt="Preview" className={`absolute inset-0 w-full h-full object-contain p-4 transition-all duration-700 ${job.status === 'idle' ? 'opacity-100' : 'opacity-50 blur-sm scale-95'}`}/>
                       {job.status === 'processing' && (
-        <div className="relative z-10 flex flex-col items-center gap-3 bg-card/90 backdrop-blur px-6 py-4 rounded-xl border border-border shadow-sm">
-           <div className="relative w-16 h-16 flex items-center justify-center">
-              {/* Spinner Background */}
-              <div className="absolute inset-0 rounded-full border-4 border-muted/30"></div>
-              {/* Spinner */}
-              <Loader2 className="w-16 h-16 text-primary animate-spin absolute" />
-              {/* Percentage Text */}
-              <span className="text-[10px] font-bold text-foreground z-10">
-                 {job.progress || 0}%
-              </span>
-           </div>
-           <span className="text-xs font-medium text-foreground">
-              Enhancing...
-           </span>
-        </div>
-      )}
+                        <div className="relative z-10 flex flex-col items-center gap-3 bg-card/90 backdrop-blur px-6 py-4 rounded-xl border border-border shadow-sm">
+                           <div className="relative w-16 h-16 flex items-center justify-center">
+                              {/* Spinner Background */}
+                              <div className="absolute inset-0 rounded-full border-4 border-muted/30"></div>
+                              {/* Spinner */}
+                              <Loader2 className="w-16 h-16 text-primary animate-spin absolute" />
+                              {/* Percentage Text */}
+                              <span className="text-[10px] font-bold text-foreground z-10">
+                                 {job.progress || 0}%
+                              </span>
+                           </div>
+                           <span className="text-xs font-medium text-foreground">
+                              Enhancing...
+                           </span>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

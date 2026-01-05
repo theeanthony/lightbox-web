@@ -4,40 +4,69 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export async function POST(req: Request) {
   try {
-    // 1. Security (Keep existing check)
+    // 1. Security Check
     const authHeader = req.headers.get("Authorization");
     if (authHeader !== `Bearer ${process.env.MODAL_WEBHOOK_SECRET}`) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
     const body = await req.json();
-    const { jobId, userId, status, resultUrl, error, meta, progress } = body; // 🟢 Added 'progress'
+    const { jobId, userId, status, resultUrl, error, meta, progress } = body;
 
-    const docRef = adminDb
+    if (!jobId || !userId) {
+      return new NextResponse("Missing Data", { status: 400 });
+    }
+
+    const jobRef = adminDb
       .collection("users")
       .doc(userId)
       .collection("generations")
       .doc(jobId);
+      
+    const userRef = adminDb.collection("users").doc(userId);
 
+    // 2. PROCESSING: Fast update (No transaction needed)
+    if (status === "processing") {
+      await jobRef.update({
+        status: "processing",
+        progress: progress || 0,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return new NextResponse("Ack", { status: 200 });
+    }
+
+    // 3. SUCCESS: Transactional Update (Deduct Credit + Mark Done)
     if (status === "success") {
-      await docRef.update({
-        status: "done",
-        resultUrl: resultUrl,
-        resultDims: meta,
-        completedAt: FieldValue.serverTimestamp(),
-        progress: 100 // Ensure 100% on done
+      await adminDb.runTransaction(async (t) => {
+        // Optional: Read user credits to ensure they didn't go negative
+        // const userDoc = await t.get(userRef);
+        // const currentCredits = userDoc.data()?.credits || 0;
+
+        // A. Charge the user
+        t.update(userRef, { 
+          credits: FieldValue.increment(-1) 
+        });
+
+        // B. Deliver the result
+        t.update(jobRef, {
+          status: "done",
+          progress: 100,
+          resultUrl: resultUrl,
+          resultDims: meta || null,
+          completedAt: FieldValue.serverTimestamp(),
+        });
       });
-    } else if (status === "processing") {
-      // 🟢 NEW: Handle progress updates
-      await docRef.update({
-        status: "processing", // Keeps it in processing state
-        progress: progress || 0 // Updates the percentage bar
-      });
-    } else {
-      await docRef.update({
+      
+      return new NextResponse("Ack", { status: 200 });
+    }
+
+    // 4. ERROR: Mark as failed (Do NOT deduct credit)
+    if (status === "error" || status === "failed") {
+      await jobRef.update({
         status: "error",
         error: error || "Processing failed",
       });
+      return new NextResponse("Ack", { status: 200 });
     }
 
     return new NextResponse("Ack", { status: 200 });

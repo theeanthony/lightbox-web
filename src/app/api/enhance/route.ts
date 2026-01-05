@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { 
       imageUrl, 
-      mode = "face", 
+      mode = "universal", 
       scale = 2, 
       face_blend = 0.5,
       // 🟢 FIX: Default to empty string if missing
