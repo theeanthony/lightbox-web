@@ -5,9 +5,10 @@ import {
   Loader2, UploadCloud, Sliders, Zap, Sparkles, 
   Aperture, Play, X, Image as ImageIcon,
   Download, Maximize2, FileText, Monitor, Check, Clock, 
-  ThumbsUp, ThumbsDown, Coins // 🟢 Added Coins icon
+  ThumbsUp, ThumbsDown, Coins 
 } from "lucide-react";
 import CompareSlider from "./CompareSlider";
+import { calculateCost } from "@/lib/pricing";
 
 // 🔧 CONFIGURATION
 const R2_PUBLIC_DOMAIN = "https://pub-07de09a82f474da9b43b3ffbb54fb5f5.r2.dev"; 
@@ -45,7 +46,6 @@ interface Job {
   progress?: number; 
 }
 
-// 🟢 Updated Props to accept credits
 export default function Playground({ initialCredits = 0 }: { initialCredits?: number }) {
   const [mode, setMode] = useState<"face" | "universal">("face");
   const [scale, setScale] = useState(2);
@@ -59,14 +59,26 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
   const [zoomedJob, setZoomedJob] = useState<Job | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   
+  // 🟢 HELPER: Get cost for a specific job
+  const getJobCost = (job: Job) => {
+    if (!job.originalDims) return 1; // Fallback
+    return calculateCost(job.originalDims.w, job.originalDims.h, scale);
+  };
+
+  // 🟢 HELPER: Calculate total cost of pending queue (For the Button)
+  const pendingJobs = jobs.filter(j => j.status === 'idle');
+  const batchCost = pendingJobs.reduce((sum, job) => sum + getJobCost(job), 0);
+
   // 🟢 Local Credit State
   const [credits, setCredits] = useState(initialCredits);
+  
   useEffect(() => {
     setCredits(initialCredits);
   }, [initialCredits]);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- 1. FETCH HISTORY (Reusable Function) ---
+  // --- 1. FETCH HISTORY ---
   const fetchHistory = useCallback(async () => {
     try {
       const res = await fetch("/api/history", { 
@@ -77,7 +89,6 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
       if (res.ok) {
         const data = await res.json();
         
-        // SMART MERGE: Update existing jobs with new status, append new ones
         setJobs(prevJobs => {
            const newJobs = [...prevJobs];
            
@@ -88,7 +99,6 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
               const existingIndex = newJobs.findIndex(j => j.id === serverJob.id);
               
               if (existingIndex !== -1) {
-                 // Update existing job
                  newJobs[existingIndex] = {
                     ...newJobs[existingIndex],
                     status: status,
@@ -97,10 +107,9 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                     createdAt: serverJob.createdAt,
                     originalDims: serverJob.originalDims || newJobs[existingIndex].originalDims,
                     feedback: serverJob.feedback || newJobs[existingIndex].feedback,
-                    progress: serverJob.progress // Sync progress from server
+                    progress: serverJob.progress 
                  };
               } else {
-                 // Add new job
                  newJobs.push({
                     id: serverJob.id,
                     status: status,
@@ -127,7 +136,6 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
     }
   }, []);
 
-  // Initial Load
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
@@ -143,7 +151,6 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
 
     return () => clearInterval(interval);
   }, [jobs, fetchHistory]);
-
 
   const handleFeedback = async (jobId: string, vote: "like" | "dislike") => {
     setJobs(prev => prev.map(j => j.id === jobId ? { ...j, feedback: vote } : j));
@@ -164,7 +171,7 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
       const newJobs: Job[] = Array.from(e.target.files).map((file) => {
         const url = URL.createObjectURL(file);
         const job: Job = {
-          id: Math.random().toString(36).substr(2, 9), // Temp ID
+          id: Math.random().toString(36).substr(2, 9), 
           file: file,
           status: "idle",
           originalUrl: url,
@@ -187,7 +194,18 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
 
   const runBatch = async () => {
     setIsBatchRunning(true);
+    
+    // 1. Calculate Total Batch Cost
     const queue = jobs.filter(j => j.status === "idle" || j.status === "error");
+    const totalCost = queue.reduce((sum, job) => sum + getJobCost(job), 0);
+
+    // 2. Pre-Check Balance
+    if (credits < totalCost) {
+       alert(`Insufficient Credits. Batch costs ${totalCost}, you have ${credits}.`);
+       setIsBatchRunning(false);
+       return;
+    }
+
     for (const job of queue) {
       await processSingleJob(job);
     }
@@ -197,16 +215,18 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
   // --- 3. PROCESS FUNCTION ---
   const processSingleJob = async (job: Job) => {
     // 🟢 CREDIT CHECK
-    if (credits <= 0) {
-        alert("You are out of credits! Please upgrade to continue.");
+    const cost = getJobCost(job);
+
+    if (credits < cost) {
+        alert("Out of credits!");
         return;
     }
 
     if (!job.file) return; 
     
     // 🟢 DEDUCT LOCAL CREDIT (Visual feedback)
-    setCredits(prev => Math.max(0, prev - 1));
-
+    setCredits(prev => Math.max(0, prev - cost));
+    
     try {
       // Step A: Upload
       updateJob(job.id, { status: "uploading", step: "Uploading..." });
@@ -214,7 +234,13 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
       const signRes = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileType: job.file.type }),
+        body: JSON.stringify({ 
+          fileType: job.file.type,
+          client_meta: {
+            originalWidth: job.originalDims?.w || 0,
+            originalHeight: job.originalDims?.h || 0,
+          }
+        }),
       });
       if (!signRes.ok) throw new Error("Auth Failed");
       const { url, filename } = await signRes.json();
@@ -262,8 +288,8 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
     } catch (err: any) {
       console.error(err);
       // 🟢 REFUND CREDIT ON ERROR (Visual only)
-      setCredits(prev => prev + 1);
-      updateJob(job.id, { status: "error", error: err.message || "Error", step: "Failed" });
+      setCredits(prev => prev + cost);
+      updateJob(job.id, { status: "error", error: err.message });
     }
   };
 
@@ -367,22 +393,31 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
               <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-background hover:bg-muted border border-input rounded-md text-sm font-medium text-foreground transition-colors"><UploadCloud className="w-4 h-4" /> Add Photos</button>
               <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
               
-              {/* 🟢 CREDIT GATED BUTTON */}
+              {/* 🟢 DYNAMIC COST BUTTON */}
               <button 
                   onClick={runBatch} 
-                  disabled={isBatchRunning || jobs.filter(j => j.status === 'idle').length === 0 || credits <= 0} 
+                  disabled={isBatchRunning || pendingJobs.length === 0 || credits <= 0} 
                   className={`flex items-center gap-2 px-6 py-2 rounded-md text-sm font-medium transition-all shadow-sm 
                     ${credits <= 0 
                         ? "bg-red-100 text-red-600 cursor-not-allowed border border-red-200" 
                         : isBatchRunning 
                             ? "bg-muted text-muted-foreground cursor-not-allowed" 
-                            : jobs.filter(j => j.status === 'idle').length > 0 
+                            : pendingJobs.length > 0 
                                 ? "bg-primary text-primary-foreground hover:opacity-90" 
                                 : "bg-muted text-muted-foreground cursor-not-allowed"
                     }`}
               >
                   {isBatchRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
-                  {credits <= 0 ? "No Credits" : isBatchRunning ? "Processing..." : "Run Batch"}
+                  
+                  {/* 🟢 BUTTON TEXT LOGIC */}
+                  {credits <= 0 
+                    ? "No Credits" 
+                    : isBatchRunning 
+                        ? "Processing..." 
+                        : pendingJobs.length > 0
+                            ? `Run Batch (${batchCost} Credits)` 
+                            : "Run Batch"
+                  }
               </button>
 
            </div>
@@ -450,6 +485,15 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                     {(job.originalDims || job.resultDims) && (
                       <div className="flex items-center gap-1.5"><Monitor className="w-3.5 h-3.5" /><span>{job.originalDims?.w || '?'}x{job.originalDims?.h || '?'}</span>{job.resultDims && <><span className="text-muted-foreground/50">→</span><span className="font-medium text-green-600">{job.resultDims.w}x{job.resultDims.h}</span></>}</div>
                     )}
+                    
+                    {/* 🟢 NEW: INDIVIDUAL COST BADGE */}
+                    {job.status === 'idle' && (
+                       <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-muted border border-border text-[10px] font-medium text-foreground ml-2">
+                          <Coins className="w-3 h-3 text-muted-foreground" />
+                          <span>{getJobCost(job)} Cr</span>
+                       </div>
+                    )}
+
                   </div>
                   {job.status === 'done' && job.resultUrl && !isJobExpired(job.createdAt) && (
                     <div className="flex items-center gap-2"><button onClick={() => setZoomedJob(job)} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-md transition-colors" title="Zoom"><Maximize2 className="w-4 h-4" /></button><button onClick={() => downloadImage(job.resultUrl!, job.file?.name || 'enhanced.png')} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-md transition-colors" title="Download"><Download className="w-4 h-4" /></button></div>

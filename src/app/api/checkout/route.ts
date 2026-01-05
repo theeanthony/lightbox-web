@@ -38,7 +38,7 @@ export async function POST() {
       // CRITICAL: We pass the Clerk User ID here so the Webhook knows who to give credits to
       metadata: {
         userId: userId,
-        credits: "500",
+        credits: "100",
       },
       customer_email: user.emailAddresses[0].emailAddress,
     });

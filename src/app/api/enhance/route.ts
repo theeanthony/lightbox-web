@@ -4,6 +4,8 @@ import { adminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import { ratelimit } from "@/lib/ratelimit";
 import { getAuthenticatedUser } from "@/lib/apiAuth";
+import { calculateCost } from "@/lib/pricing";
+
 // 🔧 CONFIG
 const MODAL_URL = "https://theeanthony--lightbox-engine-upscale-router.modal.run";
 
@@ -28,11 +30,9 @@ export async function POST(req: Request) {
     // 1. Check Credits
     const userRef = adminDb.collection("users").doc(userId);
     const userSnap = await userRef.get();
-    const credits = userSnap.data()?.credits || 0;
+    const currentCredits = userSnap.data()?.credits || 0;
 
-    if (credits < 1) {
-      return NextResponse.json({ error: "Insufficient credits" }, { status: 402 });
-    }
+    
 
     // 2. Parse Inputs
     const body = await req.json();
@@ -48,6 +48,16 @@ export async function POST(req: Request) {
       client_meta = {}
     } = body;
 
+    const w = client_meta.originalWidth || 1000; // Default fallback
+    const h = client_meta.originalHeight || 1000;
+    const cost = calculateCost(w, h, Number(scale));
+
+    if (currentCredits < cost) {
+      return NextResponse.json({ 
+        error: `Insufficient credits. Job costs ${cost}, you have ${currentCredits}.` 
+      }, { status: 402 });
+    }
+
     // 3. Create "Pending" Record
     const generationsRef = userRef.collection("generations");
     const newDoc = generationsRef.doc();
@@ -62,7 +72,8 @@ export async function POST(req: Request) {
       scale,
       createdAt: FieldValue.serverTimestamp(),
       params: { face_blend, lighting_prompt, force_subject, pro_mode },
-      meta: client_meta
+      meta: client_meta,
+      cost: cost, // 🟢 SAVE COST TO DB (So webhook knows how much to refund)
     });
 
     // 4. Calculate Creativity
@@ -99,8 +110,7 @@ export async function POST(req: Request) {
     }).catch(err => console.error("Failed to trigger Modal:", err));
 
     // 6. Deduct Credit Immediately (Refund later if it fails)
-    await userRef.update({ credits: FieldValue.increment(-1) });
-
+    await userRef.update({ credits: FieldValue.increment(-cost) });
     // Return the Job ID immediately
     return NextResponse.json({ 
       success: true,

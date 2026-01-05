@@ -46,22 +46,23 @@ export async function POST(req: Request) {
     // 4. ERROR: Refund the user (🟢 CHANGED: ADD REFUND)
     // Since we charged them to start, we must pay them back if it fails.
     if (status === "error" || status === "failed") {
-      await adminDb.runTransaction(async (t) => {
-        // Refund the credit
-        t.update(userRef, { 
-          credits: FieldValue.increment(1) 
+        await adminDb.runTransaction(async (t) => {
+          // 1. Read the Job Doc to find out how much it cost
+          const jobDoc = await t.get(jobRef);
+          const paidAmount = jobDoc.data()?.cost || 1; // Fallback to 1 if missing
+  
+          // 2. Refund that exact amount
+          t.update(userRef, { 
+            credits: FieldValue.increment(paidAmount) 
+          });
+  
+          t.update(jobRef, {
+            status: "error",
+            error: error || "Processing failed",
+          });
         });
-
-        // Mark job as error
-        t.update(jobRef, {
-          status: "error",
-          error: error || "Processing failed",
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-      
-      return new NextResponse("Ack", { status: 200 });
-    }
+        return new NextResponse("Ack", { status: 200 });
+      }
 
     return new NextResponse("Ack", { status: 200 });
 
