@@ -1,4 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin"; 
 import { FieldValue } from "firebase-admin/firestore";
@@ -11,15 +10,15 @@ const MODAL_URL = "https://theeanthony--lightbox-engine-upscale-router.modal.run
 
 export async function POST(req: Request) {
   try {
-    // 2. 🟢 REPLACE CLERK AUTH WITH DUAL AUTH
+    // 1. AUTHENTICATION (Dual Auth: Clerk + API Key)
     const userId = await getAuthenticatedUser(req);
     
     if (!userId) {
       return new NextResponse("Unauthorized: Invalid Session or API Key", { status: 401 });
     }
 
-    // 3. Rate Limit Check (Works for both Browser & API Key users)
-    const { success, limit, reset, remaining } = await ratelimit.limit(userId);
+    // 2. RATE LIMIT CHECK
+    const { success, reset } = await ratelimit.limit(userId);
     if (!success) {
       return new NextResponse("Too Many Requests", { 
         status: 429,
@@ -27,30 +26,43 @@ export async function POST(req: Request) {
       });
     }
 
-    // 1. Check Credits
-    const userRef = adminDb.collection("users").doc(userId);
-    const userSnap = await userRef.get();
-    const currentCredits = userSnap.data()?.credits || 0;
-
-    
-
-    // 2. Parse Inputs
+    // 3. PARSE INPUTS (New Unified Schema)
     const body = await req.json();
     const { 
       imageUrl, 
-      mode = "universal", 
-      scale = 2, 
-      face_blend = 0.5,
-      // 🟢 FIX: Default to empty string if missing
+      task = "upscale",
+      variant = "standard",
+      engine = "generative",
+      scale = 2,
+      strength = 0.5,
+      enhance_face = true,
+      creativity = 0.65,
       lighting_prompt = "", 
       force_subject = "", 
+      uncrop_expansion = [0,0,0,0],
       pro_mode = false,
+      created_at = Date.now() / 1000,
       client_meta = {}
     } = body;
 
-    const w = client_meta.originalWidth || 1000; // Default fallback
-    const h = client_meta.originalHeight || 1000;
-    const cost = calculateCost(w, h, Number(scale));
+    // 4. CALCULATE COST SERVER-SIDE (Security)
+    let cost = 1;
+    
+    if (["matting", "sharpen", "denoise"].includes(task)) {
+       cost = 1; // Cheap tasks
+    } else if (["uncrop", "relight"].includes(task)) {
+       cost = 3; // Expensive generative tasks
+    } else {
+       // Upscale: Depends on resolution
+       const w = client_meta.originalWidth || 1000; 
+       const h = client_meta.originalHeight || 1000;
+       cost = calculateCost(w, h, Number(scale));
+    }
+
+    // 5. CHECK CREDITS
+    const userRef = adminDb.collection("users").doc(userId);
+    const userSnap = await userRef.get();
+    const currentCredits = userSnap.data()?.credits || 0;
 
     if (currentCredits < cost) {
       return NextResponse.json({ 
@@ -58,7 +70,7 @@ export async function POST(req: Request) {
       }, { status: 402 });
     }
 
-    // 3. Create "Pending" Record
+    // 6. CREATE DB RECORD
     const generationsRef = userRef.collection("generations");
     const newDoc = generationsRef.doc();
     const jobId = newDoc.id;
@@ -66,25 +78,19 @@ export async function POST(req: Request) {
     await newDoc.set({
       id: jobId,
       userId,
-      status: "processing", // UI will show spinner immediately
+      status: "processing", 
       originalUrl: imageUrl,
-      mode,
+      task,
+      variant, 
+      engine,
       scale,
+      cost, // Saved for refund logic
       createdAt: FieldValue.serverTimestamp(),
-      params: { face_blend, lighting_prompt, force_subject, pro_mode },
+      params: { strength, creativity, lighting_prompt, uncrop_expansion },
       meta: client_meta,
-      cost: cost, // 🟢 SAVE COST TO DB (So webhook knows how much to refund)
     });
 
-    // 4. Calculate Creativity
-    let creativity = 0.65;
-    if (mode === "face") {
-      creativity = 1.0 - Number(face_blend);
-      creativity = Math.max(0.1, Math.min(0.9, creativity));
-    }
-
-    // 5. 🔥 FIRE & FORGET: Trigger Modal (Don't await result)
-    // We pass the 'jobId' and 'webhookUrl' so Modal knows where to report back
+    // 7. 🔥 FIRE & FORGET: Trigger Modal
     fetch(MODAL_URL, {
       method: "POST",
       headers: { 
@@ -92,26 +98,30 @@ export async function POST(req: Request) {
         "X-Webhook-Secret": process.env.MODAL_WEBHOOK_SECRET! 
       },
       body: JSON.stringify({
-        // Standard Params
+        // 🟢 MAPPING TO PYTHON UNIFIED SCHEMA
         image_url: imageUrl,
-        engine: mode === "universal" ? "fidelity" : "generative",
+        task,
+        variant,
+        engine,
         scale_factor: Number(scale),
+        strength,
+        enhance_face,
         creativity,
-        enhance_face: mode === "face",
-        pro_mode: pro_mode || (Number(scale) >= 3),
-        lighting_prompt: lighting_prompt || "studio lighting, neutral background",
-        force_subject: force_subject || "",
-        
-        // 🟢 NEW: Async Context
+        lighting_prompt,
+        force_subject,
+        uncrop_expansion,
+        pro_mode,
+        created_at: Date.now() / 1000,
+        // Async Context
         job_id: jobId,
         user_id: userId,
         webhook_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/modal`
       }),
     }).catch(err => console.error("Failed to trigger Modal:", err));
 
-    // 6. Deduct Credit Immediately (Refund later if it fails)
+    // 8. DEDUCT CREDITS
     await userRef.update({ credits: FieldValue.increment(-cost) });
-    // Return the Job ID immediately
+
     return NextResponse.json({ 
       success: true,
       jobId: jobId,
