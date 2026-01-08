@@ -18,14 +18,14 @@ const EXPIRATION_HOURS = 24;
 
 const ACTIVE_TASKS = [
   { id: "upscale", label: "Upscale", icon: Activity, desc: "Increase resolution & quality" },
+  { id: "sharpen", label: "Sharpen", icon: Aperture, desc: "Enhance edge detail" },
+  { id: "denoise", label: "Denoise", icon: Droplets, desc: "Reduce image noise" },
 ];
 
 const COMING_SOON_TASKS = [
   { id: "matting", label: "Remove BG", icon: Scissors },
   { id: "relight", label: "Relight", icon: Sun },
   { id: "uncrop", label: "Uncrop", icon: Expand },
-  { id: "sharpen", label: "Sharpen", icon: Aperture },
-  { id: "denoise", label: "Denoise", icon: Droplets },
 ];
 
 const getTimeRemaining = (createdAt?: string) => {
@@ -47,15 +47,6 @@ const isJobExpired = (createdAt?: string) => {
   const now = Date.now();
   const diffInHours = (now - created) / (1000 * 60 * 60);
   return diffInHours > EXPIRATION_HOURS;
-};
-
-const formatBytes = (bytes: number, decimals = 1) => {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
 const JobActionMenu = ({ onDelete }: { onDelete: () => void }) => {
@@ -99,7 +90,6 @@ const JobActionMenu = ({ onDelete }: { onDelete: () => void }) => {
   );
 };
 
-// 🟢 NEW: Interface now includes specific params for this job
 interface JobParams {
     task: string;
     engine: string;
@@ -107,6 +97,9 @@ interface JobParams {
     creativity: number;
     lighting: string;
     enhanceFace: boolean;
+    sharpenAmount: number;
+    denoiseAmount: number;
+    proMode: boolean;
 }
 
 interface Job {
@@ -122,17 +115,20 @@ interface Job {
   createdAt?: string;
   feedback?: "like" | "dislike" | null;
   progress?: number; 
-  params: JobParams; // 🟢 Snapshot of settings
+  params: JobParams;
 }
 
 export default function Playground({ initialCredits = 0 }: { initialCredits?: number }) {
-  // GLOBAL CONTROLS (What will be applied to NEXT upload)
+  // GLOBAL CONTROLS
   const [task, setTask] = useState("upscale");
-  const [engine, setEngine] = useState<"generative" | "fidelity">("generative");
+  const [engine, setEngine] = useState<"generative" | "standard">("generative");
   const [scale, setScale] = useState(2);
   const [creativity, setCreativity] = useState(0.65);
   const [enhanceFace, setEnhanceFace] = useState(true);
   const [lighting, setLighting] = useState("");
+  const [sharpenAmount, setSharpenAmount] = useState(0.0);
+  const [denoiseAmount, setDenoiseAmount] = useState(0.0);
+  const [proMode, setProMode] = useState(false);
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
@@ -147,14 +143,12 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
 
   const getJobCost = (job: Job) => {
     if (!job.originalDims) return 1; 
-    // Use the params SNAPSHOTTED on the job, not global state
     return calculateCost(job.originalDims.w, job.originalDims.h, job.params.scale);
   };
 
   const pendingJobs = jobs.filter(j => j.status === 'idle');
   const batchCost = pendingJobs.reduce((sum, job) => sum + getJobCost(job), 0);
 
-  // --- FETCH HISTORY ---
   const fetchHistory = useCallback(async () => {
     try {
       const res = await fetch("/api/history", { cache: 'no-store', next: { revalidate: 0 } });
@@ -173,15 +167,27 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
               
               const existingIndex = newJobs.findIndex(j => j.id === serverJob.id);
               
-              // 🟢 Reconstruct params from server data if needed
               const jobParams: JobParams = serverJob.params ? {
                   task: serverJob.task || "upscale",
                   engine: serverJob.engine || "generative",
                   scale: serverJob.scale || 2,
                   creativity: serverJob.params.creativity || 0.65,
                   lighting: serverJob.params.lighting_prompt || "",
-                  enhanceFace: serverJob.params.enhance_face ?? true
-              } : { task: "upscale", engine: "generative", scale: 2, creativity: 0.65, lighting: "", enhanceFace: true };
+                  enhanceFace: serverJob.params.enhance_face ?? true,
+                  sharpenAmount: serverJob.params.sharpen_amount || 0,
+                  denoiseAmount: serverJob.params.denoise_amount || 0,
+                  proMode: serverJob.params.pro_mode || false
+              } : { 
+                  task: "upscale", 
+                  engine: "generative", 
+                  scale: 2, 
+                  creativity: 0.65, 
+                  lighting: "", 
+                  enhanceFace: true,
+                  sharpenAmount: 0,
+                  denoiseAmount: 0,
+                  proMode: false
+              };
 
               if (existingIndex !== -1) {
                  newJobs[existingIndex] = {
@@ -194,7 +200,7 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                     feedback: serverJob.feedback || newJobs[existingIndex].feedback,
                     progress: serverJob.progress,
                     error: serverJob.error || newJobs[existingIndex].error,
-                    params: jobParams // Update params from server source of truth
+                    params: jobParams
                  };
               } else {
                  newJobs.push({
@@ -233,17 +239,18 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      // 1. Snapshot current settings
       const currentSettings: JobParams = {
           task,
           engine,
           scale,
           creativity,
           lighting,
-          enhanceFace
+          enhanceFace,
+          sharpenAmount,
+          denoiseAmount,
+          proMode
       };
 
-      // 2. Create Job Objects
       const newJobs: Job[] = Array.from(e.target.files).map((file) => {
         const url = URL.createObjectURL(file);
         const job: Job = { 
@@ -260,14 +267,9 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
         return job;
       });
 
-      // 3. Add to State
       setJobs((prev) => [...newJobs, ...prev]);
     }
-
-    // 🟢 CRITICAL FIX: Reset the input so the same file can be selected again
-    if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const removeJob = async (id: string) => {
@@ -314,7 +316,6 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
       
       updateJob(job.id, { status: "processing", step: "Queued...", originalUrl: publicUrl });
 
-      // 🟢 USE JOB PARAMS (Snapshot), NOT GLOBAL STATE
       const enhanceRes = await fetch("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -326,7 +327,9 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
           creativity: job.params.creativity,
           lighting_prompt: job.params.lighting,
           enhance_face: job.params.enhanceFace,
-          uncrop_expansion: [0,0,0,0],
+          sharpen_amount: job.params.sharpenAmount,
+          denoise_amount: job.params.denoiseAmount,
+          pro_mode: job.params.proMode,
           client_meta: {
             originalWidth: job.originalDims?.w || 0,
             originalHeight: job.originalDims?.h || 0,
@@ -398,30 +401,80 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
           </div>
 
           <div className="rounded-lg border border-border bg-card p-5 shadow-sm space-y-6">
+            {/* 🟢 FIXED: Engine selector is now ALWAYS visible for all tasks */}
             <div className="space-y-3">
               <label className="text-sm font-medium">Engine</label>
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setEngine("generative")} className={`py-2 px-2 rounded text-xs font-medium border transition-all ${engine === "generative" ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20" : "bg-background border-input hover:bg-muted"}`}>Generative (Creative)</button>
-                <button onClick={() => setEngine("fidelity")} className={`py-2 px-2 rounded text-xs font-medium border transition-all ${engine === "fidelity" ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20" : "bg-background border-input hover:bg-muted"}`}>Fidelity (Standard)</button>
+                <button onClick={() => setEngine("generative")} className={`py-2 px-2 rounded text-xs font-medium border transition-all ${engine === "generative" ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20" : "bg-background border-input hover:bg-muted"}`}>Generative</button>
+                <button onClick={() => setEngine("standard")} className={`py-2 px-2 rounded text-xs font-medium border transition-all ${engine === "standard" ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20" : "bg-background border-input hover:bg-muted"}`}>Standard</button>
               </div>
             </div>
 
-            <div className="space-y-3">
-                <div className="flex justify-between"><label className="text-sm font-medium">Scale Factor</label><span className="text-xs text-muted-foreground font-mono">{scale}x</span></div>
-                <input type="range" min="1" max="4" step="1" value={scale} onChange={(e) => setScale(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
-                <div className="flex justify-between text-[10px] text-muted-foreground px-1"><span>1x</span><span>2x</span><span>3x</span><span>4x</span></div>
-            </div>
+            {/* 🟢 Only show scale for upscale task */}
+            {task === 'upscale' && (
+              <div className="space-y-3">
+                  <div className="flex justify-between"><label className="text-sm font-medium">Scale Factor</label><span className="text-xs text-muted-foreground font-mono">{scale}x</span></div>
+                  <input type="range" min="1" max="4" step="1" value={scale} onChange={(e) => setScale(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
+                  <div className="flex justify-between text-[10px] text-muted-foreground px-1"><span>1x</span><span>2x</span><span>3x</span><span>4x</span></div>
+              </div>
+            )}
 
+            {/* 🟢 Sharpen controls */}
+            {(task === 'sharpen' || task === 'upscale') && (
+               <div className="space-y-3 pt-4 border-t border-dashed">
+                   <div className="flex justify-between"><label className="text-sm font-medium">Sharpness</label><span className="text-xs text-muted-foreground">{Math.round(sharpenAmount * 100)}%</span></div>
+                   <input type="range" min="0" max="1.0" step="0.1" value={sharpenAmount} onChange={(e) => setSharpenAmount(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
+                   <p className="text-[10px] text-muted-foreground">LAB sharpening intensity</p>
+               </div>
+            )}
+
+            {/* 🟢 Denoise controls */}
+            {(task === 'denoise' || task === 'upscale') && (
+               <div className="space-y-3 pt-4 border-t border-dashed">
+                   <div className="flex justify-between"><label className="text-sm font-medium">Noise Reduction</label><span className="text-xs text-muted-foreground">{Math.round(denoiseAmount * 100)}%</span></div>
+                   <input type="range" min="0" max="1.0" step="0.1" value={denoiseAmount} onChange={(e) => setDenoiseAmount(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
+                   <p className="text-[10px] text-muted-foreground">Bilateral filter strength</p>
+               </div>
+            )}
+
+            {/* 🟢 Generative-specific controls */}
             {engine === 'generative' && (
                <>
                 <div className="space-y-3 pt-4 border-t border-dashed">
-                    <div className="flex justify-between"><label className="text-sm font-medium">Texture Strength</label><span className="text-xs text-muted-foreground">{Math.round(creativity * 100)}%</span></div>
+                    <div className="flex justify-between"><label className="text-sm font-medium">Creativity</label><span className="text-xs text-muted-foreground">{Math.round(creativity * 100)}%</span></div>
                     <input type="range" min="0.1" max="1.0" step="0.1" value={creativity} onChange={(e) => setCreativity(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
-                    <p className="text-[10px] text-muted-foreground">Controls how much new detail is added.</p>
+                    <p className="text-[10px] text-muted-foreground">How much AI detail to add</p>
                 </div>
+                
+                <div className="space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={enhanceFace} 
+                        onChange={(e) => setEnhanceFace(e.target.checked)}
+                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm font-medium">Enhance Faces</span>
+                    </label>
+                    <p className="text-[10px] text-muted-foreground">Eye protection + skin texture</p>
+                </div>
+
                 <div className="space-y-3">
                     <label className="text-sm font-medium flex items-center gap-2"><Sparkles className="w-3 h-3 text-amber-500"/> Optional Prompt</label>
-                    <input type="text" placeholder="e.g. Leather texture, Film grain..." value={lighting} onChange={(e) => setLighting(e.target.value)} className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-muted-foreground/50"/>
+                    <input type="text" placeholder="e.g. golden hour, film grain..." value={lighting} onChange={(e) => setLighting(e.target.value)} className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-muted-foreground/50"/>
+                </div>
+
+                <div className="space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={proMode} 
+                        onChange={(e) => setProMode(e.target.checked)}
+                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm font-medium">Pro Mode</span>
+                    </label>
+                    <p className="text-[10px] text-muted-foreground">35 steps + higher guidance (slower)</p>
                 </div>
                </>
             )}
@@ -438,7 +491,7 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
            </div>
            <div className="flex items-center gap-3">
               <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-background hover:bg-muted border border-input rounded-md text-sm font-medium transition-colors"><UploadCloud className="w-4 h-4" /> Add Photos</button>
-              <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileSelect} />
+              <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*" onChange={handleFileSelect} />
               <button onClick={runBatch} disabled={isBatchRunning || pendingJobs.length === 0 || credits <= 0} className={`flex items-center gap-2 px-6 py-2 rounded-md text-sm font-medium transition-all shadow-sm ${credits <= 0 ? "bg-red-100 text-red-600 border border-red-200" : pendingJobs.length > 0 ? "bg-primary text-primary-foreground hover:opacity-90" : "bg-muted text-muted-foreground"}`}>
                   {isBatchRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
                   {credits <= 0 ? "No Credits" : isBatchRunning ? "Processing..." : pendingJobs.length > 0 ? `Run Batch (${batchCost} Cr)` : "Run Batch"}
@@ -456,7 +509,6 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
 
               return (
                 <div key={job.id} className={`group flex flex-col bg-card border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all ${job.status === 'error' ? 'border-red-300' : 'border-border'}`}>
-                  {/* CARD HEADER */}
                   <div className={`px-4 py-3 border-b flex justify-between items-center ${job.status === 'error' ? 'bg-red-50 border-red-100' : 'bg-muted/10 border-border'}`}>
                     <div className="flex flex-col min-w-0 gap-1">
                         <span className="text-sm font-medium text-foreground truncate max-w-[180px]">{job.file?.name || `Job ${job.id.substr(0, 6)}`}</span>
@@ -477,7 +529,6 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                     <JobActionMenu onDelete={() => removeJob(job.id)} />
                   </div>
 
-                  {/* CARD BODY */}
                   <div className="relative aspect-[3/2] bg-muted/20 w-full flex items-center justify-center overflow-hidden border-b border-border">
                     {isExpired ? (
                       <div className="flex flex-col items-center justify-center text-center p-6 text-muted-foreground"><Clock className="w-8 h-8 mb-2 opacity-50" /><span className="text-sm font-semibold">Image Expired</span><span className="text-xs text-muted-foreground/70">Deleted from secure storage</span></div>
@@ -498,14 +549,24 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                     )}
                   </div>
 
-                  {/* 🟢 FOOTER: Now shows specific params for THIS photo */}
                   <div className="p-3 bg-card flex justify-between items-center h-12">
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-muted border border-border text-[10px] font-medium text-foreground">
-                         <span className="uppercase text-muted-foreground">{job.params.engine}</span> 
-                         <span className="text-border mx-1">|</span>
-                         <span>{job.params.scale}x</span>
-                         {job.params.engine === 'generative' && <><span className="text-border mx-1">|</span><span>{Math.round(job.params.creativity * 100)}%</span></>}
+                         <span className="uppercase text-muted-foreground">{job.params.task}</span> 
+                         {job.params.task === 'upscale' && (
+                           <>
+                             <span className="text-border mx-1">|</span>
+                             <span className="uppercase text-muted-foreground">{job.params.engine}</span>
+                             <span className="text-border mx-1">|</span>
+                             <span>{job.params.scale}x</span>
+                           </>
+                         )}
+                         {job.params.engine === 'generative' && job.params.task === 'upscale' && (
+                           <>
+                             <span className="text-border mx-1">|</span>
+                             <span>{Math.round(job.params.creativity * 100)}%</span>
+                           </>
+                         )}
                       </div>
                     </div>
                     {job.status === 'done' && job.resultUrl && !isExpired && (

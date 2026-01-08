@@ -6,13 +6,13 @@ import { getAuthenticatedUser } from "@/lib/apiAuth";
 import { calculateCost } from "@/lib/pricing";
 
 // 🔧 CONFIG
+// Make sure this matches the app name in deploy.py ("lightbox-engine")
 const MODAL_URL = "https://theeanthony--lightbox-engine-upscale-router.modal.run";
 
 export async function POST(req: Request) {
   try {
-    // 1. AUTHENTICATION (Dual Auth: Clerk + API Key)
+    // 1. AUTHENTICATION
     const userId = await getAuthenticatedUser(req);
-    
     if (!userId) {
       return new NextResponse("Unauthorized: Invalid Session or API Key", { status: 401 });
     }
@@ -26,37 +26,31 @@ export async function POST(req: Request) {
       });
     }
 
-    // 3. PARSE INPUTS (New Unified Schema)
+    // 3. PARSE INPUTS
     const body = await req.json();
     const { 
       imageUrl, 
       task = "upscale",
-      variant = "standard",
       engine = "generative",
-      scale = 2,
-      strength = 0.5,
-      enhance_face = true,
+      scale_factor = 2, // Map 'scale' from client to 'scale_factor' for python
       creativity = 0.65,
       lighting_prompt = "", 
-      force_subject = "", 
-      uncrop_expansion = [0,0,0,0],
+      enhance_face = true,
+      // 🟢 NEW PARAMS
+      sharpen_amount = 0,
+      denoise_amount = 0,
       pro_mode = false,
-      created_at = Date.now() / 1000,
       client_meta = {}
     } = body;
 
-    // 4. CALCULATE COST SERVER-SIDE (Security)
+    // 4. CALCULATE COST
     let cost = 1;
-    
-    if (["matting", "sharpen", "denoise"].includes(task)) {
-       cost = 1; // Cheap tasks
-    } else if (["uncrop", "relight"].includes(task)) {
-       cost = 3; // Expensive generative tasks
+    if (["sharpen", "denoise"].includes(task)) {
+       cost = 1; 
     } else {
-       // Upscale: Depends on resolution
        const w = client_meta.originalWidth || 1000; 
        const h = client_meta.originalHeight || 1000;
-       cost = calculateCost(w, h, Number(scale));
+       cost = calculateCost(w, h, Number(scale_factor));
     }
 
     // 5. CHECK CREDITS
@@ -81,16 +75,23 @@ export async function POST(req: Request) {
       status: "processing", 
       originalUrl: imageUrl,
       task,
-      variant, 
       engine,
-      scale,
-      cost, // Saved for refund logic
+      scale: scale_factor,
+      cost,
       createdAt: FieldValue.serverTimestamp(),
-      params: { strength, creativity, lighting_prompt, uncrop_expansion },
+      // Save params so we can show them in history later
+      params: { creativity, lighting_prompt, sharpen_amount, denoise_amount, pro_mode },
       meta: client_meta,
     });
 
-    // 7. 🔥 FIRE & FORGET: Trigger Modal
+    // 7. 🔥 TRIGGER MODAL
+    // Ensure we are sending a reachable URL
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    if (baseUrl.includes("localhost")) {
+        console.warn("⚠️ WARNING: sending localhost webhook to cloud Modal. This will fail unless using ngrok.");
+    }
+    const webhookUrl = `${baseUrl}/api/webhooks/modal`;
+
     fetch(MODAL_URL, {
       method: "POST",
       headers: { 
@@ -98,24 +99,23 @@ export async function POST(req: Request) {
         "X-Webhook-Secret": process.env.MODAL_WEBHOOK_SECRET! 
       },
       body: JSON.stringify({
-        // 🟢 MAPPING TO PYTHON UNIFIED SCHEMA
+        // 🟢 MAPPING TO PYTHON UNIFIED SCHEMA EXACTLY
         image_url: imageUrl,
         task,
-        variant,
         engine,
-        scale_factor: Number(scale),
-        strength,
-        enhance_face,
+        scale_factor: Number(scale_factor),
         creativity,
         lighting_prompt,
-        force_subject,
-        uncrop_expansion,
+        enhance_face,
+        sharpen_amount, // Passed correctly now
+        denoise_amount, // Passed correctly now
         pro_mode,
-        created_at: Date.now() / 1000,
-        // Async Context
+        
+        // System / Async
         job_id: jobId,
         user_id: userId,
-        webhook_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/modal`
+        webhook_url: webhookUrl,
+        created_at: Date.now() / 1000
       }),
     }).catch(err => console.error("Failed to trigger Modal:", err));
 
