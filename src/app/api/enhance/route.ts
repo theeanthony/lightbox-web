@@ -28,18 +28,26 @@ export async function POST(req: Request) {
 
     // 3. PARSE INPUTS
     const body = await req.json();
-    const { 
-      imageUrl, 
+    const {
+      imageUrl,
       task = "upscale",
       engine = "generative",
       scale_factor = 2, // Map 'scale' from client to 'scale_factor' for python
       creativity = 0.65,
-      lighting_prompt = "", 
+      lighting_prompt = "",
       enhance_face = true,
-      // 🟢 NEW PARAMS
+      // 🏛️ PANTHEON PARAMS
       sharpen_amount = 0,
       denoise_amount = 0,
       pro_mode = false,
+      // Colorization (Osiris)
+      colorize = false,
+      colorize_render_factor = 35,
+      // Deblur (Hephaestus)
+      deblur = false,
+      // Output format
+      output_format = "png",
+      jpeg_quality = 95,
       client_meta = {}
     } = body;
 
@@ -72,16 +80,29 @@ export async function POST(req: Request) {
     await newDoc.set({
       id: jobId,
       userId,
-      status: "processing", 
+      status: "processing",
       originalUrl: imageUrl,
       task,
       engine,
       scale: scale_factor,
       cost,
       createdAt: FieldValue.serverTimestamp(),
-      // Save params so we can show them in history later
-      params: { creativity, lighting_prompt, sharpen_amount, denoise_amount, pro_mode },
-      meta: client_meta,
+      // 🏛️ Save all Pantheon params for history display
+      params: {
+        model: client_meta.model || "apollo",
+        creativity,
+        lighting_prompt,
+        enhance_face,
+        sharpen_amount,
+        denoise_amount,
+        pro_mode,
+        colorize,
+        colorize_render_factor,
+        deblur,
+        output_format,
+        jpeg_quality
+      },
+      client_meta,
     });
 
     // 7. 🔥 TRIGGER MODAL
@@ -94,12 +115,12 @@ export async function POST(req: Request) {
 
     fetch(MODAL_URL, {
       method: "POST",
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
-        "X-Webhook-Secret": process.env.MODAL_WEBHOOK_SECRET! 
+        "X-Webhook-Secret": process.env.MODAL_WEBHOOK_SECRET!
       },
       body: JSON.stringify({
-        // 🟢 MAPPING TO PYTHON UNIFIED SCHEMA EXACTLY
+        // 🏛️ MAPPING TO PYTHON UNIFIED SCHEMA EXACTLY
         image_url: imageUrl,
         task,
         engine,
@@ -107,10 +128,18 @@ export async function POST(req: Request) {
         creativity,
         lighting_prompt,
         enhance_face,
-        sharpen_amount, // Passed correctly now
-        denoise_amount, // Passed correctly now
+        sharpen_amount,
+        denoise_amount,
         pro_mode,
-        
+        // Colorization (Osiris)
+        colorize,
+        colorize_render_factor,
+        // Deblur (Hephaestus)
+        deblur,
+        // Output format
+        output_format,
+        jpeg_quality,
+
         // System / Async
         job_id: jobId,
         user_id: userId,

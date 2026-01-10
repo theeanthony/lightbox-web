@@ -16,16 +16,74 @@ import { calculateCost } from "@/lib/pricing";
 const R2_PUBLIC_DOMAIN = "https://pub-07de09a82f474da9b43b3ffbb54fb5f5.r2.dev"; 
 const EXPIRATION_HOURS = 24;
 
-const ACTIVE_TASKS = [
-  { id: "upscale", label: "Upscale", icon: Activity, desc: "Increase resolution & quality" },
-  { id: "sharpen", label: "Sharpen", icon: Aperture, desc: "Enhance edge detail" },
-  { id: "denoise", label: "Denoise", icon: Droplets, desc: "Reduce image noise" },
+// 🏛️ THE PANTHEON - Mythological Model Branding
+const PANTHEON_MODELS = [
+  {
+    id: "apollo",
+    name: "Apollo",
+    icon: Zap,
+    emoji: "⚡",
+    subtitle: "Fast Upscaling",
+    desc: "Quick 1x-4x resolution boost with Real-ESRGAN. Best for speed.",
+    engine: "standard",
+    task: "upscale",
+    speed: "5-15s",
+    color: "#FFD700"
+  },
+  {
+    id: "athena",
+    name: "Athena",
+    icon: Sparkles,
+    emoji: "🦉",
+    subtitle: "AI Creative Upscaling",
+    desc: "Premium upscaling with generative AI. Adds stunning detail & texture.",
+    engine: "generative",
+    task: "upscale",
+    speed: "60-120s",
+    color: "#9370DB"
+  },
+  {
+    id: "hephaestus",
+    name: "Hephaestus",
+    icon: Wand2,
+    emoji: "🔨",
+    subtitle: "Motion Blur Removal",
+    desc: "Fix blurry, out-of-focus photos. Restores sharpness.",
+    engine: "standard",
+    task: "deblur",
+    speed: "15-30s",
+    color: "#CD7F32"
+  },
+  {
+    id: "osiris",
+    name: "Osiris",
+    icon: Sun,
+    emoji: "🌅",
+    subtitle: "B&W Colorization",
+    desc: "Add realistic color to black & white photos using AI.",
+    engine: "standard",
+    task: "colorize",
+    speed: "48-68s",
+    color: "#FF6B35"
+  },
+  {
+    id: "isis",
+    name: "Isis",
+    icon: Sparkles,
+    emoji: "✨",
+    subtitle: "Complete Restoration",
+    desc: "Full cleanup: removes noise, fixes blur, enhances sharpness.",
+    engine: "standard",
+    task: "restore",
+    speed: "20-40s",
+    color: "#4ECDC4"
+  },
 ];
 
-const COMING_SOON_TASKS = [
-  { id: "matting", label: "Remove BG", icon: Scissors },
-  { id: "relight", label: "Relight", icon: Sun },
-  { id: "uncrop", label: "Uncrop", icon: Expand },
+const COMING_SOON_GODS = [
+  { id: "chronos", label: "Chronos", icon: Clock, emoji: "⏳", desc: "Age Progression" },
+  { id: "morpheus", label: "Morpheus", icon: Wand2, emoji: "🎨", desc: "Artistic Styles" },
+  { id: "anubis", label: "Anubis", icon: Scissors, emoji: "🐺", desc: "Background Removal" },
 ];
 
 const getTimeRemaining = (createdAt?: string) => {
@@ -91,8 +149,9 @@ const JobActionMenu = ({ onDelete }: { onDelete: () => void }) => {
 };
 
 interface JobParams {
-    task: string;
-    engine: string;
+    model: string; // Pantheon model ID (apollo, athena, etc.)
+    task: string; // Internal task (upscale, deblur, colorize, restore)
+    engine: string; // standard or generative
     scale: number;
     creativity: number;
     lighting: string;
@@ -100,6 +159,14 @@ interface JobParams {
     sharpenAmount: number;
     denoiseAmount: number;
     proMode: boolean;
+    // Colorization (Osiris)
+    colorize: boolean;
+    colorizeRenderFactor: number;
+    // Deblur (Hephaestus)
+    deblur: boolean;
+    // Output
+    outputFormat: string; // "png" or "jpeg"
+    jpegQuality: number;
 }
 
 interface Job {
@@ -119,16 +186,24 @@ interface Job {
 }
 
 export default function Playground({ initialCredits = 0 }: { initialCredits?: number }) {
-  // GLOBAL CONTROLS
-  const [task, setTask] = useState("upscale");
-  const [engine, setEngine] = useState<"generative" | "standard">("generative");
-  const [scale, setScale] = useState(2);
-  const [creativity, setCreativity] = useState(0.65);
-  const [enhanceFace, setEnhanceFace] = useState(true);
-  const [lighting, setLighting] = useState("");
-  const [sharpenAmount, setSharpenAmount] = useState(0.0);
-  const [denoiseAmount, setDenoiseAmount] = useState(0.0);
-  const [proMode, setProMode] = useState(false);
+  // 🏛️ PANTHEON MODEL CONTROLS
+  const [selectedModel, setSelectedModel] = useState("apollo"); // apollo, athena, hephaestus, osiris, isis
+
+  // Universal Parameters
+  const [scale, setScale] = useState(2); // Magnitude (1x-4x)
+  const [creativity, setCreativity] = useState(0.65); // Inspiration (Athena only)
+  const [enhanceFace, setEnhanceFace] = useState(true); // Essence
+  const [lighting, setLighting] = useState(""); // Optional prompt (Athena only)
+  const [sharpenAmount, setSharpenAmount] = useState(0.0); // Clarity (0-1.0)
+  const [denoiseAmount, setDenoiseAmount] = useState(0.0); // Purity (0-1.0)
+  const [proMode, setProMode] = useState(false); // Pro Mode (35 steps)
+
+  // Colorization (Osiris)
+  const [colorizeRenderFactor, setColorizeRenderFactor] = useState(35); // Fidelity (10-40)
+
+  // Output Format
+  const [outputFormat, setOutputFormat] = useState<"png" | "jpeg">("png");
+  const [jpegQuality, setJpegQuality] = useState(95); // 80-100
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isBatchRunning, setIsBatchRunning] = useState(false);
@@ -167,26 +242,43 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
               
               const existingIndex = newJobs.findIndex(j => j.id === serverJob.id);
               
+              // 🏛️ Try to get model from client_meta first, then params, then existing job
+              const existingJob = existingIndex !== -1 ? newJobs[existingIndex] : null;
+              const modelFromServer = serverJob.client_meta?.model || serverJob.params?.model;
+              const modelToUse = modelFromServer || existingJob?.params.model || "apollo";
+
               const jobParams: JobParams = serverJob.params ? {
-                  task: serverJob.task || "upscale",
-                  engine: serverJob.engine || "generative",
-                  scale: serverJob.scale || 2,
-                  creativity: serverJob.params.creativity || 0.65,
-                  lighting: serverJob.params.lighting_prompt || "",
-                  enhanceFace: serverJob.params.enhance_face ?? true,
-                  sharpenAmount: serverJob.params.sharpen_amount || 0,
-                  denoiseAmount: serverJob.params.denoise_amount || 0,
-                  proMode: serverJob.params.pro_mode || false
-              } : { 
-                  task: "upscale", 
-                  engine: "generative", 
-                  scale: 2, 
-                  creativity: 0.65, 
-                  lighting: "", 
+                  model: modelToUse,
+                  task: serverJob.task || existingJob?.params.task || "upscale",
+                  engine: serverJob.engine || existingJob?.params.engine || "generative",
+                  scale: serverJob.scale || existingJob?.params.scale || 2,
+                  creativity: serverJob.params.creativity ?? existingJob?.params.creativity ?? 0.65,
+                  lighting: serverJob.params.lighting_prompt || existingJob?.params.lighting || "",
+                  enhanceFace: serverJob.params.enhance_face ?? existingJob?.params.enhanceFace ?? true,
+                  sharpenAmount: serverJob.params.sharpen_amount ?? existingJob?.params.sharpenAmount ?? 0,
+                  denoiseAmount: serverJob.params.denoise_amount ?? existingJob?.params.denoiseAmount ?? 0,
+                  proMode: serverJob.params.pro_mode ?? existingJob?.params.proMode ?? false,
+                  colorize: serverJob.params.colorize ?? existingJob?.params.colorize ?? false,
+                  colorizeRenderFactor: serverJob.params.colorize_render_factor ?? existingJob?.params.colorizeRenderFactor ?? 35,
+                  deblur: serverJob.params.deblur ?? existingJob?.params.deblur ?? false,
+                  outputFormat: serverJob.params.output_format || existingJob?.params.outputFormat || "png",
+                  jpegQuality: serverJob.params.jpeg_quality ?? existingJob?.params.jpegQuality ?? 95
+              } : existingJob?.params || {
+                  model: "apollo",
+                  task: "upscale",
+                  engine: "generative",
+                  scale: 2,
+                  creativity: 0.65,
+                  lighting: "",
                   enhanceFace: true,
                   sharpenAmount: 0,
                   denoiseAmount: 0,
-                  proMode: false
+                  proMode: false,
+                  colorize: false,
+                  colorizeRenderFactor: 35,
+                  deblur: false,
+                  outputFormat: "png",
+                  jpegQuality: 95
               };
 
               if (existingIndex !== -1) {
@@ -239,16 +331,25 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
+      const model = PANTHEON_MODELS.find(m => m.id === selectedModel);
+      if (!model) return;
+
       const currentSettings: JobParams = {
-          task,
-          engine,
+          model: selectedModel,
+          task: model.task,
+          engine: model.engine,
           scale,
           creativity,
           lighting,
           enhanceFace,
           sharpenAmount,
           denoiseAmount,
-          proMode
+          proMode,
+          colorize: model.task === "colorize",
+          colorizeRenderFactor,
+          deblur: model.task === "deblur",
+          outputFormat,
+          jpegQuality
       };
 
       const newJobs: Job[] = Array.from(e.target.files).map((file) => {
@@ -319,9 +420,9 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
       const enhanceRes = await fetch("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           imageUrl: publicUrl,
-          task: job.params.task, 
+          task: job.params.task,
           engine: job.params.engine,
           scale_factor: job.params.scale,
           creativity: job.params.creativity,
@@ -330,7 +431,16 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
           sharpen_amount: job.params.sharpenAmount,
           denoise_amount: job.params.denoiseAmount,
           pro_mode: job.params.proMode,
+          // Colorization (Osiris)
+          colorize: job.params.colorize,
+          colorize_render_factor: job.params.colorizeRenderFactor,
+          // Deblur (Hephaestus)
+          deblur: job.params.deblur,
+          // Output format
+          output_format: job.params.outputFormat,
+          jpeg_quality: job.params.jpegQuality,
           client_meta: {
+            model: job.params.model,
             originalWidth: job.originalDims?.w || 0,
             originalHeight: job.originalDims?.h || 0,
           }
@@ -362,8 +472,10 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
     <div className="flex flex-col lg:flex-row gap-8 text-foreground pb-20">
       <aside className="lg:w-80 flex-shrink-0 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Playground</h1>
-          <p className="text-muted-foreground text-sm">AI Visual Intelligence Engine</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            Playground <span className="text-lg">🏛️</span>
+          </h1>
+          <p className="text-muted-foreground text-sm">The Pantheon of Image Enhancement</p>
         </div>
 
         <div className={`rounded-lg border p-4 flex items-center justify-between shadow-sm transition-colors ${credits > 0 ? "bg-primary/5 border-primary/20" : "bg-red-50 border-red-200"}`}>
@@ -376,24 +488,51 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
 
         <div className="sticky top-8 space-y-6">
           <div className="rounded-lg border border-border bg-card p-4 shadow-sm space-y-4">
-            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2"><Sliders className="w-4 h-4"/> Select Task</h2>
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Sparkles className="w-4 h-4"/> The Pantheon
+            </h2>
             <div className="grid grid-cols-1 gap-2">
-              {ACTIVE_TASKS.map((t) => (
-                <button key={t.id} onClick={() => setTask(t.id)} className={`flex items-center gap-3 p-3 rounded-md border transition-all ${task === t.id ? "bg-primary/10 border-primary text-primary shadow-sm" : "bg-background border-input hover:bg-muted text-muted-foreground"}`}>
-                  <t.icon className="w-5 h-5" />
-                  <div className="flex flex-col items-start">
-                    <span className="text-sm font-medium">{t.label}</span>
-                    <span className="text-[10px] text-muted-foreground/80">{t.desc}</span>
+              {PANTHEON_MODELS.map((model) => (
+                <button
+                  key={model.id}
+                  onClick={() => setSelectedModel(model.id)}
+                  className={`flex items-center gap-3 p-3 rounded-md border transition-all ${
+                    selectedModel === model.id
+                      ? "bg-primary/10 border-primary text-primary shadow-sm ring-1 ring-primary/20"
+                      : "bg-background border-input hover:bg-muted text-muted-foreground"
+                  }`}
+                >
+                  <div className="text-2xl">{model.emoji}</div>
+                  <div className="flex flex-col items-start flex-1">
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="text-sm font-semibold">{model.name}</span>
+                      <span className="text-[9px] text-muted-foreground/70 ml-auto">{model.speed}</span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground/80">{model.subtitle}</span>
                   </div>
                 </button>
               ))}
             </div>
+
+            {/* 🏛️ Show detailed description for selected model */}
+            {(() => {
+              const model = PANTHEON_MODELS.find(m => m.id === selectedModel);
+              if (!model) return null;
+              return (
+                <div className="p-3 rounded-md bg-muted/30 border border-border">
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    <span className="font-semibold text-foreground">{model.emoji} {model.name}:</span> {model.desc}
+                  </p>
+                </div>
+              );
+            })()}
             <div className="pt-2">
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 px-1">Coming Soon</div>
                 <div className="grid grid-cols-3 gap-2 opacity-60">
-                {COMING_SOON_TASKS.map((t) => (
-                    <div key={t.id} className="flex flex-col items-center justify-center gap-1.5 p-2 rounded-md border bg-muted/30 border-border text-muted-foreground cursor-not-allowed">
-                        <t.icon className="w-4 h-4" /><span className="text-[10px] font-medium">{t.label}</span>
+                {COMING_SOON_GODS.map((god) => (
+                    <div key={god.id} className="flex flex-col items-center justify-center gap-1.5 p-2 rounded-md border bg-muted/30 border-border text-muted-foreground cursor-not-allowed">
+                        <div className="text-lg">{god.emoji}</div>
+                        <span className="text-[10px] font-medium">{god.label}</span>
                     </div>
                 ))}
                 </div>
@@ -401,83 +540,201 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
           </div>
 
           <div className="rounded-lg border border-border bg-card p-5 shadow-sm space-y-6">
-            {/* 🟢 FIXED: Engine selector is now ALWAYS visible for all tasks */}
-            <div className="space-y-3">
-              <label className="text-sm font-medium">Engine</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setEngine("generative")} className={`py-2 px-2 rounded text-xs font-medium border transition-all ${engine === "generative" ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20" : "bg-background border-input hover:bg-muted"}`}>Generative</button>
-                <button onClick={() => setEngine("standard")} className={`py-2 px-2 rounded text-xs font-medium border transition-all ${engine === "standard" ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20" : "bg-background border-input hover:bg-muted"}`}>Standard</button>
-              </div>
-            </div>
+            {(() => {
+              const model = PANTHEON_MODELS.find(m => m.id === selectedModel);
+              if (!model) return null;
 
-            {/* 🟢 Only show scale for upscale task */}
-            {task === 'upscale' && (
-              <div className="space-y-3">
-                  <div className="flex justify-between"><label className="text-sm font-medium">Scale Factor</label><span className="text-xs text-muted-foreground font-mono">{scale}x</span></div>
-                  <input type="range" min="1" max="4" step="1" value={scale} onChange={(e) => setScale(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
-                  <div className="flex justify-between text-[10px] text-muted-foreground px-1"><span>1x</span><span>2x</span><span>3x</span><span>4x</span></div>
-              </div>
-            )}
-
-            {/* 🟢 Sharpen controls */}
-            {(task === 'sharpen' || task === 'upscale') && (
-               <div className="space-y-3 pt-4 border-t border-dashed">
-                   <div className="flex justify-between"><label className="text-sm font-medium">Sharpness</label><span className="text-xs text-muted-foreground">{Math.round(sharpenAmount * 100)}%</span></div>
-                   <input type="range" min="0" max="1.0" step="0.1" value={sharpenAmount} onChange={(e) => setSharpenAmount(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
-                   <p className="text-[10px] text-muted-foreground">LAB sharpening intensity</p>
-               </div>
-            )}
-
-            {/* 🟢 Denoise controls */}
-            {(task === 'denoise' || task === 'upscale') && (
-               <div className="space-y-3 pt-4 border-t border-dashed">
-                   <div className="flex justify-between"><label className="text-sm font-medium">Noise Reduction</label><span className="text-xs text-muted-foreground">{Math.round(denoiseAmount * 100)}%</span></div>
-                   <input type="range" min="0" max="1.0" step="0.1" value={denoiseAmount} onChange={(e) => setDenoiseAmount(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
-                   <p className="text-[10px] text-muted-foreground">Bilateral filter strength</p>
-               </div>
-            )}
-
-            {/* 🟢 Generative-specific controls */}
-            {engine === 'generative' && (
-               <>
-                <div className="space-y-3 pt-4 border-t border-dashed">
-                    <div className="flex justify-between"><label className="text-sm font-medium">Creativity</label><span className="text-xs text-muted-foreground">{Math.round(creativity * 100)}%</span></div>
-                    <input type="range" min="0.1" max="1.0" step="0.1" value={creativity} onChange={(e) => setCreativity(Number(e.target.value))} className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"/>
-                    <p className="text-[10px] text-muted-foreground">How much AI detail to add</p>
-                </div>
-                
-                <div className="space-y-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={enhanceFace} 
-                        onChange={(e) => setEnhanceFace(e.target.checked)}
-                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+              return (
+                <>
+                  {/* 🏛️ APOLLO & ATHENA - Upscale Parameters */}
+                  {(selectedModel === 'apollo' || selectedModel === 'athena') && (
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <label className="text-sm font-medium">Magnitude</label>
+                        <span className="text-xs text-muted-foreground font-mono">{scale}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="4"
+                        step="1"
+                        value={scale}
+                        onChange={(e) => setScale(Number(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
                       />
-                      <span className="text-sm font-medium">Enhance Faces</span>
-                    </label>
-                    <p className="text-[10px] text-muted-foreground">Eye protection + skin texture</p>
-                </div>
+                      <div className="flex justify-between text-[10px] text-muted-foreground px-1">
+                        <span>1x</span><span>2x</span><span>3x</span><span>4x</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Upscaling strength</p>
+                    </div>
+                  )}
 
-                <div className="space-y-3">
-                    <label className="text-sm font-medium flex items-center gap-2"><Sparkles className="w-3 h-3 text-amber-500"/> Optional Prompt</label>
-                    <input type="text" placeholder="e.g. golden hour, film grain..." value={lighting} onChange={(e) => setLighting(e.target.value)} className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-muted-foreground/50"/>
-                </div>
+                  {/* 🏛️ ATHENA - Generative Controls */}
+                  {selectedModel === 'athena' && (
+                    <>
+                      <div className="space-y-3 pt-4 border-t border-dashed">
+                        <div className="flex justify-between">
+                          <label className="text-sm font-medium">Inspiration</label>
+                          <span className="text-xs text-muted-foreground">{Math.round(creativity * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="1.0"
+                          step="0.1"
+                          value={creativity}
+                          onChange={(e) => setCreativity(Number(e.target.value))}
+                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <p className="text-[10px] text-muted-foreground">AI creativity level</p>
+                      </div>
 
-                <div className="space-y-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={proMode} 
-                        onChange={(e) => setProMode(e.target.checked)}
-                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={enhanceFace}
+                            onChange={(e) => setEnhanceFace(e.target.checked)}
+                            className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm font-medium">Essence (Face Enhancement)</span>
+                        </label>
+                        <p className="text-[10px] text-muted-foreground">Eye protection + skin texture</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-sm font-medium flex items-center gap-2">
+                          <Sparkles className="w-3 h-3 text-amber-500"/> Optional Prompt
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. golden hour, film grain..."
+                          value={lighting}
+                          onChange={(e) => setLighting(e.target.value)}
+                          className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-muted-foreground/50"
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={proMode}
+                            onChange={(e) => setProMode(e.target.checked)}
+                            className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm font-medium">Pro Mode</span>
+                        </label>
+                        <p className="text-[10px] text-muted-foreground">35 steps + higher guidance (slower)</p>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 🏛️ OSIRIS - Colorization */}
+                  {selectedModel === 'osiris' && (
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <label className="text-sm font-medium">Fidelity</label>
+                        <span className="text-xs text-muted-foreground font-mono">{colorizeRenderFactor}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="10"
+                        max="40"
+                        step="1"
+                        value={colorizeRenderFactor}
+                        onChange={(e) => setColorizeRenderFactor(Number(e.target.value))}
+                        className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
                       />
-                      <span className="text-sm font-medium">Pro Mode</span>
-                    </label>
-                    <p className="text-[10px] text-muted-foreground">35 steps + higher guidance (slower)</p>
-                </div>
-               </>
-            )}
+                      <p className="text-[10px] text-muted-foreground">Higher = better quality, slower processing</p>
+                    </div>
+                  )}
+
+                  {/* 🏛️ ISIS - Restoration (Full Pipeline) */}
+                  {selectedModel === 'isis' && (
+                    <>
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <label className="text-sm font-medium">Purity (Denoise)</label>
+                          <span className="text-xs text-muted-foreground">{Math.round(denoiseAmount * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1.0"
+                          step="0.1"
+                          value={denoiseAmount}
+                          onChange={(e) => setDenoiseAmount(Number(e.target.value))}
+                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <p className="text-[10px] text-muted-foreground">Remove noise and grain</p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <label className="text-sm font-medium">Clarity (Sharpen)</label>
+                          <span className="text-xs text-muted-foreground">{Math.round(sharpenAmount * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1.0"
+                          step="0.1"
+                          value={sharpenAmount}
+                          onChange={(e) => setSharpenAmount(Number(e.target.value))}
+                          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                        <p className="text-[10px] text-muted-foreground">Enhance edge details</p>
+                      </div>
+                    </>
+                  )}
+
+                  {/* 🏛️ Universal - Output Format */}
+                  <div className="space-y-3 pt-4 border-t border-dashed">
+                    <label className="text-sm font-medium">Output Format</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setOutputFormat("png")}
+                        className={`py-2 px-2 rounded text-xs font-medium border transition-all ${
+                          outputFormat === "png"
+                            ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20"
+                            : "bg-background border-input hover:bg-muted"
+                        }`}
+                      >
+                        PNG (Lossless)
+                      </button>
+                      <button
+                        onClick={() => setOutputFormat("jpeg")}
+                        className={`py-2 px-2 rounded text-xs font-medium border transition-all ${
+                          outputFormat === "jpeg"
+                            ? "bg-primary/10 border-primary text-primary ring-1 ring-primary/20"
+                            : "bg-background border-input hover:bg-muted"
+                        }`}
+                      >
+                        JPEG (Smaller)
+                      </button>
+                    </div>
+                    {outputFormat === "jpeg" && (
+                      <div className="space-y-2 mt-2">
+                        <div className="flex justify-between">
+                          <label className="text-xs text-muted-foreground">JPEG Quality</label>
+                          <span className="text-xs text-muted-foreground font-mono">{jpegQuality}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="80"
+                          max="100"
+                          step="5"
+                          value={jpegQuality}
+                          onChange={(e) => setJpegQuality(Number(e.target.value))}
+                          className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       </aside>
@@ -539,6 +796,47 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                     ) : (
                       <>
                         <img src={job.originalUrl} alt="Preview" className={`absolute inset-0 w-full h-full object-contain p-4 transition-all duration-700 ${job.status === 'idle' ? 'opacity-100' : 'opacity-50 blur-sm scale-95'}`}/>
+
+                        {/* 🏛️ Show settings preview when idle (queued) */}
+                        {job.status === 'idle' && (() => {
+                          const model = PANTHEON_MODELS.find(m => m.id === job.params.model);
+                          if (!model) return null;
+                          return (
+                            <div className="absolute top-3 left-3 right-3 bg-card/95 backdrop-blur-sm border border-border rounded-lg p-3 shadow-lg">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-xl">{model.emoji}</span>
+                                <div className="flex-1">
+                                  <div className="text-xs font-semibold text-foreground">{model.name}</div>
+                                  <div className="text-[10px] text-muted-foreground">{model.subtitle}</div>
+                                </div>
+                                <div className="text-[10px] font-mono text-muted-foreground bg-muted px-2 py-1 rounded">{model.speed}</div>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 text-[10px]">
+                                {job.params.task === 'upscale' && (
+                                  <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full font-medium">{job.params.scale}x Scale</span>
+                                )}
+                                {job.params.model === 'athena' && (
+                                  <>
+                                    <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">{Math.round(job.params.creativity * 100)}% Inspiration</span>
+                                    {job.params.enhanceFace && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">Face Enhancement</span>}
+                                    {job.params.proMode && <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">Pro Mode</span>}
+                                  </>
+                                )}
+                                {job.params.model === 'osiris' && (
+                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-medium">Fidelity {job.params.colorizeRenderFactor}</span>
+                                )}
+                                {job.params.model === 'isis' && (
+                                  <>
+                                    {job.params.denoiseAmount > 0 && <span className="px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded-full font-medium">{Math.round(job.params.denoiseAmount * 100)}% Purity</span>}
+                                    {job.params.sharpenAmount > 0 && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">{Math.round(job.params.sharpenAmount * 100)}% Clarity</span>}
+                                  </>
+                                )}
+                                <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-full font-medium uppercase">{job.params.outputFormat}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {job.status === 'processing' && (
                           <div className="relative z-10 flex flex-col items-center gap-3 bg-card/90 backdrop-blur px-6 py-4 rounded-xl border border-border shadow-sm">
                              <div className="relative w-16 h-16 flex items-center justify-center"><div className="absolute inset-0 rounded-full border-4 border-muted/30"></div><Loader2 className="w-16 h-16 text-primary animate-spin absolute" /><span className="text-[10px] font-bold text-foreground z-10">{job.progress || 0}%</span></div>
@@ -552,21 +850,38 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                   <div className="p-3 bg-card flex justify-between items-center h-12">
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-muted border border-border text-[10px] font-medium text-foreground">
-                         <span className="uppercase text-muted-foreground">{job.params.task}</span> 
-                         {job.params.task === 'upscale' && (
-                           <>
-                             <span className="text-border mx-1">|</span>
-                             <span className="uppercase text-muted-foreground">{job.params.engine}</span>
-                             <span className="text-border mx-1">|</span>
-                             <span>{job.params.scale}x</span>
-                           </>
-                         )}
-                         {job.params.engine === 'generative' && job.params.task === 'upscale' && (
-                           <>
-                             <span className="text-border mx-1">|</span>
-                             <span>{Math.round(job.params.creativity * 100)}%</span>
-                           </>
-                         )}
+                         {/* 🏛️ Show Pantheon model name */}
+                         {(() => {
+                           const model = PANTHEON_MODELS.find(m => m.id === job.params.model);
+                           if (model) {
+                             return (
+                               <>
+                                 <span>{model.emoji}</span>
+                                 <span className="font-semibold">{model.name}</span>
+                                 {job.params.task === 'upscale' && (
+                                   <>
+                                     <span className="text-border mx-1">|</span>
+                                     <span>{job.params.scale}x</span>
+                                   </>
+                                 )}
+                                 {job.params.model === 'athena' && (
+                                   <>
+                                     <span className="text-border mx-1">|</span>
+                                     <span>{Math.round(job.params.creativity * 100)}% Inspiration</span>
+                                   </>
+                                 )}
+                                 {job.params.model === 'osiris' && (
+                                   <>
+                                     <span className="text-border mx-1">|</span>
+                                     <span>F{job.params.colorizeRenderFactor}</span>
+                                   </>
+                                 )}
+                               </>
+                             );
+                           }
+                           // Fallback for old jobs
+                           return <span className="uppercase text-muted-foreground">{job.params.task}</span>;
+                         })()}
                       </div>
                     </div>
                     {job.status === 'done' && job.resultUrl && !isExpired && (
