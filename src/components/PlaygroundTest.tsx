@@ -316,6 +316,22 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
       return;
     }
 
+    // 🔒 VALIDATE: Check dimension limits to prevent backend errors
+    if (selectedModel === "apollo" || selectedModel === "athena") {
+      const outputW = currentDims.w * scale;
+      const outputH = currentDims.h * scale;
+      const maxDim = 8192; // Standard mode limit (Pro mode: 12288)
+
+      if (Math.max(outputW, outputH) > maxDim) {
+        const maxScale = Math.floor(maxDim / Math.max(currentDims.w, currentDims.h));
+        setError(
+          `Output dimensions (${outputW}×${outputH}) would exceed ${maxDim}px limit. ` +
+          `Reduce scale to ${maxScale}x or less.`
+        );
+        return;
+      }
+    }
+
     setIsProcessing(true);
     setProgress(0);
     setError(null);
@@ -811,6 +827,27 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     <span>3x</span>
                     <span>4x</span>
                   </div>
+                  {/* Show dimension limit warning */}
+                  {currentDims && (() => {
+                    const outputW = currentDims.w * scale;
+                    const outputH = currentDims.h * scale;
+                    const maxDim = 8192;
+                    const wouldExceed = Math.max(outputW, outputH) > maxDim;
+
+                    if (wouldExceed) {
+                      const maxScale = Math.floor(maxDim / Math.max(currentDims.w, currentDims.h));
+                      return (
+                        <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30">
+                          <div className="flex items-center gap-1.5 text-red-400">
+                            <AlertCircle className="w-3 h-3" />
+                            <span className="text-[10px]">
+                              Output would be {outputW}×{outputH} (max: {maxDim}px). Reduce to {maxScale}x.
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })()}
                 </div>
               )}
 
@@ -1126,18 +1163,20 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                   </div>
                 ) : (
                   <div className="relative w-full h-full flex items-center justify-center">
-                    <img
-                      src={currentImage}
-                      alt="Current"
-                      className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                      style={{
-                        transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
-                        transformOrigin: 'center center',
-                        transition: isPanning ? 'none' : 'transform 0.2s',
-                        userSelect: 'none',
-                        pointerEvents: isPanning ? 'none' : 'auto'
-                      }}
-                    />
+                    {currentImage && (
+                      <img
+                        src={currentImage}
+                        alt="Current"
+                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                        style={{
+                          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                          transformOrigin: 'center center',
+                          transition: isPanning ? 'none' : 'transform 0.2s',
+                          userSelect: 'none',
+                          pointerEvents: isPanning ? 'none' : 'auto'
+                        }}
+                      />
+                    )}
                     {isProcessing && (
                       <div className="absolute inset-0 rounded-lg overflow-hidden">
                         {/* Animated Background Overlay */}
