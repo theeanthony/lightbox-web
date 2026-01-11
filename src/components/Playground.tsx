@@ -13,8 +13,81 @@ import CompareSlider from "./CompareSlider";
 import { calculateCost } from "@/lib/pricing";
 
 // 🔧 CONFIGURATION
-const R2_PUBLIC_DOMAIN = "https://pub-07de09a82f474da9b43b3ffbb54fb5f5.r2.dev"; 
+const R2_PUBLIC_DOMAIN = "https://pub-07de09a82f474da9b43b3ffbb54fb5f5.r2.dev";
 const EXPIRATION_HOURS = 24;
+
+// 📏 FILE SIZE LIMITS (matching deploy.py)
+const MAX_OUTPUT_SIZE_MB = {
+  png: 250,
+  jpeg: 100,
+};
+
+const MAX_OUTPUT_DIMENSION = {
+  standard: 8192,
+  pro: 12288,
+};
+
+// 📊 Size estimation utilities
+const estimateOutputSize = (
+  width: number,
+  height: number,
+  scale: number,
+  format: string
+): number => {
+  const outputPixels = (width * scale) * (height * scale);
+  const bytesPerPixel = format === 'png' ? 3 : 0.2;
+  const estimatedMB = (outputPixels * bytesPerPixel) / 1_000_000;
+  return Math.round(estimatedMB);
+};
+
+const getSizeWarning = (
+  width: number,
+  height: number,
+  scale: number,
+  format: string,
+  proMode: boolean
+): { type: 'error' | 'warning' | null; message: string; suggestJPEG?: boolean } => {
+  const outputW = width * scale;
+  const outputH = height * scale;
+  const maxDim = MAX_OUTPUT_DIMENSION[proMode ? 'pro' : 'standard'];
+  const estimatedMB = estimateOutputSize(width, height, scale, format);
+  const maxMB = MAX_OUTPUT_SIZE_MB[format as keyof typeof MAX_OUTPUT_SIZE_MB];
+
+  // Check dimension limits
+  if (Math.max(outputW, outputH) > maxDim) {
+    return {
+      type: 'error',
+      message: `Output (${outputW}x${outputH}) exceeds ${maxDim}px limit. Reduce scale to ${Math.floor(maxDim / Math.max(width, height))}x or less.`
+    };
+  }
+
+  // Check file size limits
+  if (estimatedMB > maxMB) {
+    if (format === 'png') {
+      const jpegMB = estimateOutputSize(width, height, scale, 'jpeg');
+      return {
+        type: 'error',
+        message: `Output would be ~${estimatedMB}MB PNG (limit: ${maxMB}MB). Switch to JPEG (~${jpegMB}MB) or reduce scale.`,
+        suggestJPEG: true
+      };
+    } else {
+      return {
+        type: 'error',
+        message: `Output would be ~${estimatedMB}MB (limit: ${maxMB}MB). Reduce scale to ${scale - 1}x or less.`
+      };
+    }
+  }
+
+  // Warning for large files (>100MB)
+  if (estimatedMB > 100) {
+    return {
+      type: 'warning',
+      message: `Large output: ~${estimatedMB}MB ${format.toUpperCase()}. Download may take time.`
+    };
+  }
+
+  return { type: null, message: '' };
+};
 
 // 🏛️ THE PANTHEON - Mythological Model Branding
 const PANTHEON_MODELS = [
@@ -731,6 +804,16 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                         />
                       </div>
                     )}
+
+                    {/* 📏 Size limits info */}
+                    <div className="mt-3 p-2 bg-muted/30 rounded text-[10px] text-muted-foreground">
+                      <div className="font-medium mb-1">File Size Limits:</div>
+                      <div className="space-y-0.5">
+                        <div>• PNG: 250MB max</div>
+                        <div>• JPEG: 100MB max</div>
+                        <div>• Max dimension: {proMode ? '12K' : '8K'} {proMode && '(Pro Mode)'}</div>
+                      </div>
+                    </div>
                   </div>
                 </>
               );
@@ -832,7 +915,78 @@ export default function Playground({ initialCredits = 0 }: { initialCredits?: nu
                                   </>
                                 )}
                                 <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-full font-medium uppercase">{job.params.outputFormat}</span>
+
+                                {/* 📏 Size warning/estimate */}
+                                {job.originalDims && job.params.task === 'upscale' && (() => {
+                                  const warning = getSizeWarning(
+                                    job.originalDims.w,
+                                    job.originalDims.h,
+                                    job.params.scale,
+                                    job.params.outputFormat,
+                                    job.params.proMode
+                                  );
+                                  const estimatedMB = estimateOutputSize(
+                                    job.originalDims.w,
+                                    job.originalDims.h,
+                                    job.params.scale,
+                                    job.params.outputFormat
+                                  );
+
+                                  if (warning.type === 'error') {
+                                    return (
+                                      <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-medium flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3" />
+                                        ~{estimatedMB}MB - Too large!
+                                      </span>
+                                    );
+                                  } else if (warning.type === 'warning') {
+                                    return (
+                                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3" />
+                                        ~{estimatedMB}MB
+                                      </span>
+                                    );
+                                  } else if (estimatedMB > 10) {
+                                    // Show size for anything over 10MB
+                                    return (
+                                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium">
+                                        ~{estimatedMB}MB
+                                      </span>
+                                    );
+                                  }
+                                })()}
                               </div>
+
+                              {/* 🚨 Size warning message with JPEG suggestion */}
+                              {job.originalDims && job.params.task === 'upscale' && (() => {
+                                const warning = getSizeWarning(
+                                  job.originalDims.w,
+                                  job.originalDims.h,
+                                  job.params.scale,
+                                  job.params.outputFormat,
+                                  job.params.proMode
+                                );
+
+                                if (warning.type) {
+                                  return (
+                                    <div className={`mt-2 p-2 rounded text-[10px] ${
+                                      warning.type === 'error'
+                                        ? 'bg-red-50 text-red-700 border border-red-200'
+                                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    }`}>
+                                      <div className="font-medium mb-1">{warning.message}</div>
+                                      {warning.suggestJPEG && (
+                                        <button
+                                          onClick={() => setOutputFormat('jpeg')}
+                                          className="px-2 py-1 bg-white border border-current rounded text-[9px] font-semibold hover:bg-red-100 transition-colors"
+                                        >
+                                          Switch to JPEG
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                }
+                              })()}
                             </div>
                           );
                         })()}

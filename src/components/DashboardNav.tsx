@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CreditCard, Home, Settings, Zap, FlaskConical,Key } from "lucide-react"; // <--- 1. Import Icon
+import { CreditCard, Home, Settings, Zap, FlaskConical, Key, Sparkles } from "lucide-react";
 
 const items = [
   {
@@ -11,7 +11,7 @@ const items = [
     icon: Home,
   },
   {
-    title: "Playground", // <--- 2. Add this new item
+    title: "Playground",
     href: "/dashboard/playground",
     icon: FlaskConical,
   },
@@ -57,6 +57,20 @@ export function DashboardNav() {
           </Link>
         );
       })}
+
+      {/* 🏛️ Pantheon Full-Screen Playground */}
+      <div className="mt-4 pt-4 border-t border-border">
+        <Link
+          href="/playground"
+          className="group flex items-center rounded-md px-3 py-2 text-sm font-medium bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-500 hover:to-indigo-500 transition-all shadow-sm hover:shadow-md"
+        >
+          <Sparkles className="mr-2 h-4 w-4" />
+          <span>Pantheon Studio</span>
+        </Link>
+        <p className="text-xs text-muted-foreground mt-1 px-3">
+          Full-screen enhancement workspace
+        </p>
+      </div>
     </nav>
   );
 }
