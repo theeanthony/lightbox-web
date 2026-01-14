@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   Upload, Download, Settings, Zap, Sparkles, Sun, Wand2,
   Info, AlertCircle, Check, Loader2, X, ChevronDown, Image as ImageIcon,
@@ -43,7 +43,7 @@ const PANTHEON_MODELS = [
     description: "Fix blurry, out-of-focus photos. Restores sharpness.",
     color: "from-orange-500 to-red-500",
     task: "deblur",
-    engine: "standard",
+    engine: "deblur",
   },
   {
     id: "osiris",
@@ -74,6 +74,15 @@ const estimateOutputSize = (w: number, h: number, scale: number, format: string)
   return Math.round((outputPixels * bytesPerPixel) / 1_000_000);
 };
 
+// 🔒 DIMENSION SANITIZATION
+// Prevents NaN from propagating through the system
+const sanitizeDimensions = (dims: { w: number; h: number } | null | undefined, fallback: { w: number; h: number }): { w: number; h: number } => {
+  if (!dims || !dims.w || !dims.h || isNaN(dims.w) || isNaN(dims.h) || dims.w <= 0 || dims.h <= 0) {
+    return fallback;
+  }
+  return dims;
+};
+
 // 📜 HISTORY SYSTEM TYPES
 interface HistoryEntry {
   id: string;
@@ -95,6 +104,8 @@ interface HistoryEntry {
   branchName?: string; // "Main", "Branch A", "Branch B", etc.
   children: string[]; // IDs of child entries
   outputDims?: { w: number; h: number }; // Output dimensions after processing
+  status?: "processing" | "done" | "failed" | "error"; // Job status
+  error?: string; // Error message if failed
 }
 
 interface Project {
@@ -111,10 +122,10 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
   // State - Projects & History
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false); // For immediate button feedback
 
   // 💰 CREDIT MANAGEMENT
   // SECURITY NOTE: Client-side credit display is for UX only.
@@ -134,8 +145,9 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
   const [proMode, setProMode] = useState(false);
   const [outputFormat, setOutputFormat] = useState<"png" | "jpeg">("png");
   const [colorizeRenderFactor, setColorizeRenderFactor] = useState(35);
-  const [denoiseAmount, setDenoiseAmount] = useState(0.5);
-  const [sharpenAmount, setSharpenAmount] = useState(0.3);
+  // ✅ FIX: Match Playground.tsx defaults (0.3/0.5 caused "plastic" look)
+  const [denoiseAmount, setDenoiseAmount] = useState(0.0);
+  const [sharpenAmount, setSharpenAmount] = useState(0.0);
 
   // Zoom and comparison state
   const [zoomLevel, setZoomLevel] = useState(1); // 1 = 100%, 0.5 = 50%, 2 = 200%
@@ -181,21 +193,34 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                   ...entry,
                   imageUrl: serverJob.resultUrl,
                   outputDims: serverJob.resultDims || entry.outputDims,
+                  status: "done",
                 };
                 hasUpdates = true;
 
-                // Stop processing state if this is the current entry
+                // Update progress to 100% if this is the current entry
                 if (entryIndex === project.currentIndex) {
-                  setIsProcessing(false);
                   setProgress(100);
                 }
               }
 
-              // Handle errors
+              // Handle errors: Update status and reset dims to parent's dims
               if (serverJob.status === 'failed' || serverJob.status === 'error') {
+                // Find parent entry to get correct input dimensions
+                const parentEntry = entry.parentId
+                  ? updatedHistory.find(e => e.id === entry.parentId)
+                  : null;
+                const parentDims = parentEntry?.outputDims || project.originalDims;
+
+                updatedHistory[entryIndex] = {
+                  ...entry,
+                  status: "failed",
+                  error: serverJob.error || "Enhancement failed",
+                  // Reset outputDims to parent's dims (what it TRIED to process)
+                  outputDims: sanitizeDimensions(parentDims, project.originalDims),
+                };
                 hasUpdates = true;
+
                 if (entryIndex === project.currentIndex) {
-                  setIsProcessing(false);
                   setError(serverJob.error || "Enhancement failed");
                 }
               }
@@ -215,16 +240,23 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
     }
   }, []);
 
-  // Poll for updates while processing
+  // 🔄 PROCESSING STATE: Compute if ANY entry is processing (for polling)
+  const hasProcessingEntries = useMemo(() => {
+    return projects.some(project =>
+      project.history.some(entry => entry.status === "processing")
+    );
+  }, [projects]);
+
+  // Poll for updates while ANY entry is processing
   useEffect(() => {
-    if (!isProcessing) return;
+    if (!hasProcessingEntries) return;
 
     const interval = setInterval(() => {
       fetchJobUpdates();
     }, 2000); // Poll every 2 seconds
 
     return () => clearInterval(interval);
-  }, [isProcessing, fetchJobUpdates]);
+  }, [hasProcessingEntries, fetchJobUpdates]);
 
   // Computed values
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -233,7 +265,17 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
   const currentImage = currentEntry?.imageUrl || null; // Current viewing image
   const resultImage = currentEntry?.imageUrl || null;
   const originalDims = activeProject?.originalDims || null;
-  const currentDims = currentEntry?.outputDims || originalDims;
+
+  // 🔒 SANITIZE DIMENSIONS: Prevent NaN from breaking cost calculations
+  const safeFallback = originalDims || { w: 1000, h: 1000 };
+  const currentDims = sanitizeDimensions(
+    currentEntry?.outputDims || originalDims,
+    safeFallback
+  );
+
+  // Check if current entry is processing
+  const isCurrentEntryProcessing = currentEntry?.status === "processing";
+
   const canUndo = activeProject ? activeProject.currentIndex > 0 : false;
   const canRedo = activeProject ? activeProject.currentIndex < activeProject.history.length - 1 : false;
 
@@ -249,6 +291,10 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
     return calculateCost(currentDims.w, currentDims.h, scale);
   };
   const enhancementCost = getEnhancementCost();
+
+  // 🚫 Check if current entry is failed (disable processing from failed state)
+  const isCurrentEntryFailed = currentEntry?.status === "failed" || currentEntry?.status === "error";
+  const canEnhance = originalImage && !isCurrentEntryProcessing && !isSubmitting && credits >= enhancementCost && !isCurrentEntryFailed;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -332,7 +378,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
       }
     }
 
-    setIsProcessing(true);
+    setIsSubmitting(true); // Disable button immediately
     setProgress(0);
     setError(null);
 
@@ -508,6 +554,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
         branchName: newBranchName,
         children: [],
         outputDims,
+        status: "processing", // Mark as processing initially
       };
 
       setProjects((prev) =>
@@ -536,6 +583,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
       // Job submitted successfully - will poll for updates
       setProgress(60);
+      setIsSubmitting(false); // Re-enable button (entry status will keep it disabled if still processing)
 
     } catch (err: any) {
       console.error("Enhancement error:", err);
@@ -545,7 +593,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
       setCredits(prev => prev + cost);
 
       setError(err.message || "Enhancement failed. Please try again.");
-      setIsProcessing(false);
+      setIsSubmitting(false); // Re-enable button on error
     }
   };
 
@@ -1033,8 +1081,21 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
               )}
             </div>
 
+            {/* Failed Entry Warning */}
+            {isCurrentEntryFailed && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                <div className="flex items-center gap-2 text-red-400 mb-2">
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="text-sm font-semibold">Enhancement Failed</span>
+                </div>
+                <p className="text-xs text-red-300">
+                  {currentEntry?.error || "This enhancement failed. Navigate to a successful entry or the original to try again."}
+                </p>
+              </div>
+            )}
+
             {/* Cost Estimate */}
-            {currentDims && (
+            {currentDims && !isCurrentEntryFailed && (
               <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/50">
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-slate-400">Estimated Cost:</div>
@@ -1060,17 +1121,17 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
             <div className="pt-4 border-t border-slate-800">
               <button
                 onClick={handleEnhance}
-                disabled={!originalImage || isProcessing || credits < enhancementCost}
+                disabled={!canEnhance}
                 className={`w-full py-4 rounded-xl font-semibold text-white transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isProcessing
+                  isCurrentEntryProcessing || isSubmitting
                     ? "bg-slate-700"
                     : `bg-gradient-to-r ${model.color} hover:shadow-2xl hover:scale-[1.02]`
                 }`}
               >
-                {isProcessing ? (
+                {isCurrentEntryProcessing || isSubmitting ? (
                   <span className="flex items-center justify-center gap-2">
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Processing...
+                    {isSubmitting ? "Submitting..." : "Processing..."}
                   </span>
                 ) : (
                   <span className="flex items-center justify-center gap-2">
@@ -1118,7 +1179,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
             <>
               <div className="absolute inset-0 p-8 flex items-center justify-center overflow-hidden">
                 {/* Show comparison modes only if we have a result AND not currently processing */}
-                {resultImage && activeProject && activeProject.currentIndex > 0 && !isProcessing ? (
+                {resultImage && activeProject && activeProject.currentIndex > 0 && !isCurrentEntryProcessing ? (
                   <div className="w-full h-full relative flex items-center justify-center">
                     {comparisonMode === "slider" ? (
                       <div
@@ -1177,7 +1238,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                         }}
                       />
                     )}
-                    {isProcessing && (
+                    {isCurrentEntryProcessing && (
                       <div className="absolute inset-0 rounded-lg overflow-hidden">
                         {/* Animated Background Overlay */}
                         <div className="absolute inset-0 bg-black/40 backdrop-blur-sm">
@@ -1300,7 +1361,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     )}
 
                     {/* Comparison Mode Toggle (only show if we have a result) */}
-                    {resultImage && activeProject && activeProject.currentIndex > 0 && !isProcessing && (
+                    {resultImage && activeProject && activeProject.currentIndex > 0 && !isCurrentEntryProcessing && (
                       <div className="flex items-center gap-1 px-2">
                         <button
                           onClick={() => setComparisonMode("slider")}
@@ -1413,6 +1474,8 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     const modelData = PANTHEON_MODELS.find((m) => m.id === entry.modelId);
                     const branchColor = branchColors[entry.branchName || "Main"] || "bg-slate-500";
                     const showBranchHeader = entry.branchName !== currentBranch && entry.branchName !== "Main" && idx > 0;
+                    const isFailed = entry.status === "failed" || entry.status === "error";
+                    const isProcessing = entry.status === "processing";
 
                     if (entry.branchName) {
                       currentBranch = entry.branchName;
@@ -1435,7 +1498,9 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                         <button
                           onClick={() => jumpToHistoryEntryWithReset(index)}
                           className={`w-full text-left p-2.5 rounded-lg transition-all group ${
-                            isCurrent
+                            isFailed
+                              ? "bg-red-500/10 border border-red-500/30 hover:bg-red-500/20"
+                              : isCurrent
                               ? "bg-slate-700/80 shadow-sm"
                               : "hover:bg-slate-800/40"
                           }`}
@@ -1454,7 +1519,15 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                                 }`}>
                                   {entry.label}
                                 </span>
-                                {isCurrent && (
+                                {isFailed && (
+                                  <span className="flex-shrink-0 px-1.5 py-0.5 text-[9px] font-bold bg-red-500/20 text-red-400 rounded border border-red-500/30">
+                                    FAILED
+                                  </span>
+                                )}
+                                {isProcessing && (
+                                  <Loader2 className="flex-shrink-0 w-3 h-3 text-slate-400 animate-spin" />
+                                )}
+                                {isCurrent && !isFailed && !isProcessing && (
                                   <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                                 )}
                               </div>
