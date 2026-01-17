@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
-  Upload, Download, Settings, Zap, Sparkles, Sun, Wand2,
+  Upload, Download, Settings, Zap, Sparkles, Sun, Wand2, Focus, Palette,
   Info, AlertCircle, Check, Loader2, X, ChevronDown, Image as ImageIcon,
   Undo, Redo, Clock, ChevronRight, ZoomIn, ZoomOut, Maximize2 as ZoomReset,
   SlidersHorizontal, Columns2, Coins
@@ -19,6 +19,7 @@ const PANTHEON_MODELS = [
     id: "apollo",
     name: "Apollo",
     emoji: "⚡",
+    icon: Zap,
     subtitle: "Fast Upscaling",
     description: "Quick 1x-4x resolution boost with Real-ESRGAN. Best for speed.",
     color: "from-amber-500 to-yellow-500",
@@ -29,6 +30,7 @@ const PANTHEON_MODELS = [
     id: "athena",
     name: "Athena",
     emoji: "🦉",
+    icon: Sparkles,
     subtitle: "AI Creative Upscaling",
     description: "Premium upscaling with generative AI. Adds stunning detail & texture.",
     color: "from-purple-500 to-indigo-500",
@@ -39,6 +41,7 @@ const PANTHEON_MODELS = [
     id: "hephaestus",
     name: "Hephaestus",
     emoji: "🔨",
+    icon: Focus,
     subtitle: "Motion Blur Removal",
     description: "Fix blurry, out-of-focus photos. Restores sharpness.",
     color: "from-orange-500 to-red-500",
@@ -49,6 +52,7 @@ const PANTHEON_MODELS = [
     id: "osiris",
     name: "Osiris",
     emoji: "🌅",
+    icon: Palette,
     subtitle: "B&W Colorization",
     description: "Add realistic color to black & white photos using AI.",
     color: "from-pink-500 to-rose-500",
@@ -59,6 +63,7 @@ const PANTHEON_MODELS = [
     id: "isis",
     name: "Isis",
     emoji: "✨",
+    icon: Wand2,
     subtitle: "Complete Restoration",
     description: "Full cleanup: removes noise, fixes blur, enhances sharpness.",
     color: "from-cyan-500 to-teal-500",
@@ -692,7 +697,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+    <div className="h-screen flex flex-col bg-white text-slate-900">
       {/* Custom Animations */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scan {
@@ -712,18 +717,14 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
         }
       `}} />
 
-      {/* Header */}
-      <header className="border-b border-slate-800/50 bg-slate-900/50 backdrop-blur-sm">
-        <div className="px-6 py-4 flex items-center justify-between">
+      {/* Header (Topaz Photo style - white theme) */}
+      <header className="border-b border-slate-200 bg-white">
+        <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="text-2xl">🏛️</div>
-              <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-                  Lightbox Pantheon
-                </h1>
-                <p className="text-xs text-slate-400">AI Image Enhancement</p>
-              </div>
+            <div>
+              <h1 className="text-lg font-semibold text-slate-900">
+                LIGHTBOX
+              </h1>
             </div>
 
             {/* 💰 Credit Balance Display */}
@@ -741,11 +742,11 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                 }`} />
               </div>
               <div>
-                <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
                   Balance
                 </div>
-                <div className="text-sm font-bold text-white">
-                  {credits} <span className="text-xs font-normal text-slate-400">Cr</span>
+                <div className="text-sm font-bold text-slate-900">
+                  {credits} <span className="text-xs font-normal text-slate-500">Cr</span>
                 </div>
               </div>
             </div>
@@ -755,7 +756,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
             {/* Upload New Photo Button */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors text-sm font-medium flex items-center gap-2"
+              className="px-4 py-2 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 transition-colors text-sm font-medium flex items-center gap-2 text-slate-900"
             >
               <Upload className="w-4 h-4" />
               Upload New
@@ -764,7 +765,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
             {resultImage && activeProject && activeProject.currentIndex > 0 && (
               <button
                 onClick={handleDownload}
-                className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 transition-all text-sm font-medium flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+                className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-900 transition-colors text-sm font-medium flex items-center gap-2 text-white"
               >
                 <Download className="w-4 h-4" />
                 Export
@@ -784,81 +785,79 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Model Selector - NARROW LEFT COLUMN */}
-        <div className="w-24 border-r border-slate-800/50 bg-slate-900/70 backdrop-blur-sm flex flex-col items-center py-6 gap-2 relative z-50">
-          {PANTHEON_MODELS.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setSelectedModel(m.id)}
-              title={m.name}
-              className={`group relative w-16 h-16 rounded-xl flex items-center justify-center transition-all ${
-                selectedModel === m.id
-                  ? `bg-gradient-to-br ${m.color} shadow-lg scale-110`
-                  : "bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 hover:border-slate-600"
-              }`}
-            >
-              <div className={`text-3xl transition-transform ${selectedModel === m.id ? 'scale-110' : 'group-hover:scale-105'}`}>
-                {m.emoji}
-              </div>
-              {selectedModel === m.id && (
-                <div className="absolute -right-1 -top-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-slate-900">
-                  <Check className="w-3 h-3 text-white" />
+        {/* Model Selector - NARROW LEFT COLUMN (Topaz Photo style - white) */}
+        <div className="w-16 border-r border-slate-200 bg-slate-50 flex flex-col items-center py-6 gap-3 relative z-50">
+          {PANTHEON_MODELS.map((m) => {
+            const IconComponent = m.icon;
+            const isSelected = selectedModel === m.id;
+            return (
+              <button
+                key={m.id}
+                onClick={() => setSelectedModel(m.id)}
+                title={m.name}
+                className={`group relative w-12 h-12 flex items-center justify-center transition-all ${
+                  isSelected
+                    ? "text-slate-900"
+                    : "text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                {/* Icon */}
+                <IconComponent
+                  className={`w-6 h-6 transition-transform ${
+                    isSelected ? '' : 'group-hover:scale-110'
+                  }`}
+                  strokeWidth={1.5}
+                />
+                {/* Active indicator - thin line on left edge */}
+                {isSelected && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-8 bg-slate-900"></div>
+                )}
+                {/* Tooltip on hover */}
+                <div className="absolute left-full ml-2 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] shadow-xl">
+                  <div className="text-sm font-semibold text-white">{m.name}</div>
+                  <div className="text-xs text-slate-300">{m.subtitle}</div>
                 </div>
-              )}
-              {/* Tooltip on hover */}
-              <div className="absolute left-full ml-2 px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] shadow-xl">
-                <div className="text-sm font-semibold text-white">{m.name}</div>
-                <div className="text-xs text-slate-400">{m.subtitle}</div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Parameters Panel - MIDDLE COLUMN */}
-        <div className="w-80 border-r border-slate-800/50 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+        {/* Parameters Panel - MIDDLE COLUMN (Topaz Photo style - white) */}
+        <div className="w-96 border-r border-slate-200 bg-white overflow-y-auto">
           <div className="p-6 space-y-6">
-            {/* Model Header & Description */}
-            <div>
-              <div className="flex items-center gap-3 mb-3">
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${model.color} flex items-center justify-center shadow-lg`}>
-                  <div className="text-2xl">{model.emoji}</div>
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-bold text-white">{model.name}</h2>
-                  <p className="text-xs text-slate-400">{model.subtitle}</p>
+            {/* Model Header (Topaz Photo style - white theme) */}
+            <div className="pb-4 border-b border-slate-200">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const IconComponent = model.icon;
+                    return <IconComponent className="w-5 h-5 text-slate-900" strokeWidth={1.5} />;
+                  })()}
+                  <h2 className="text-base font-semibold text-slate-900 uppercase tracking-wide">{model.name}</h2>
                 </div>
                 {/* Image Dimensions */}
                 {originalDims && (
                   <div className="text-right">
-                    <div className="text-sm font-mono text-slate-300">
+                    <div className="text-xs font-mono text-slate-500">
                       {originalDims.w} × {originalDims.h}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {Math.round((originalDims.w * originalDims.h) / 1_000_000)}MP
                     </div>
                   </div>
                 )}
               </div>
-              <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {model.description}
-                </p>
-              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {model.description}
+              </p>
             </div>
 
             {/* Parameters */}
-            <div className="space-y-4 pt-2">
-              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                <Settings className="w-4 h-4" />
-                Parameters
-              </h3>
+            <div className="space-y-6 pt-2">
 
               {/* Upscale Models */}
               {(selectedModel === "apollo" || selectedModel === "athena") && (
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm text-slate-300">Scale Factor</label>
-                    <span className="text-sm font-mono text-slate-400">{scale}x</span>
+                <div className="pb-6 border-b border-slate-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Scale Factor</label>
+                    <span className="text-sm font-medium text-slate-900">{scale}x</span>
                   </div>
                   <input
                     type="range"
@@ -885,8 +884,8 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     if (wouldExceed) {
                       const maxScale = Math.floor(maxDim / Math.max(currentDims.w, currentDims.h));
                       return (
-                        <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30">
-                          <div className="flex items-center gap-1.5 text-red-400">
+                        <div className="mt-2 p-2 rounded bg-red-50 border border-red-200">
+                          <div className="flex items-center gap-1.5 text-red-700">
                             <AlertCircle className="w-3 h-3" />
                             <span className="text-[10px]">
                               Output would be {outputW}×{outputH} (max: {maxDim}px). Reduce to {maxScale}x.
@@ -902,10 +901,10 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
               {/* Athena Specific */}
               {selectedModel === "athena" && (
                 <>
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-sm text-slate-300">Creativity</label>
-                      <span className="text-sm font-mono text-slate-400">
+                  <div className="pb-6 border-b border-slate-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Creativity</label>
+                      <span className="text-sm font-medium text-slate-900">
                         {Math.round(creativity * 100)}%
                       </span>
                     </div>
@@ -920,35 +919,35 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     />
                   </div>
 
-                  <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors">
+                  <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors border border-slate-200">
                     <input
                       type="checkbox"
                       checked={enhanceFace}
                       onChange={(e) => setEnhanceFace(e.target.checked)}
-                      className="w-4 h-4 rounded accent-purple-500"
+                      className="w-4 h-4 rounded accent-slate-900"
                     />
                     <div className="flex-1">
-                      <div className="text-sm text-slate-200 font-medium">
+                      <div className="text-sm text-slate-900 font-medium">
                         Face Enhancement
                       </div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-slate-500">
                         Preserve eye identity, enhance skin
                       </div>
                     </div>
                   </label>
 
-                  <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors">
+                  <label className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors border border-slate-200">
                     <input
                       type="checkbox"
                       checked={proMode}
                       onChange={(e) => setProMode(e.target.checked)}
-                      className="w-4 h-4 rounded accent-amber-500"
+                      className="w-4 h-4 rounded accent-slate-900"
                     />
                     <div className="flex-1">
-                      <div className="text-sm text-slate-200 font-medium">
+                      <div className="text-sm text-slate-900 font-medium">
                         Pro Mode
                       </div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-slate-500">
                         35 steps, slower but higher quality
                       </div>
                     </div>
@@ -958,10 +957,10 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
               {/* Osiris Specific */}
               {selectedModel === "osiris" && (
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-sm text-slate-300">Fidelity</label>
-                    <span className="text-sm font-mono text-slate-400">
+                <div className="pb-6 border-b border-slate-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Fidelity</label>
+                    <span className="text-sm font-medium text-slate-900">
                       {colorizeRenderFactor}
                     </span>
                   </div>
@@ -972,9 +971,9 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     step="1"
                     value={colorizeRenderFactor}
                     onChange={(e) => setColorizeRenderFactor(Number(e.target.value))}
-                    className="w-full accent-pink-500"
+                    className="w-full accent-slate-900"
                   />
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Higher = better quality, slower
                   </p>
                 </div>
@@ -983,12 +982,12 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
               {/* Isis Specific */}
               {selectedModel === "isis" && (
                 <>
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-sm text-slate-300">
+                  <div className="pb-6 border-b border-slate-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
                         Noise Reduction
                       </label>
-                      <span className="text-sm font-mono text-slate-400">
+                      <span className="text-sm font-medium text-slate-900">
                         {Math.round(denoiseAmount * 100)}%
                       </span>
                     </div>
@@ -999,14 +998,14 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                       step="0.1"
                       value={denoiseAmount}
                       onChange={(e) => setDenoiseAmount(Number(e.target.value))}
-                      className="w-full accent-cyan-500"
+                      className="w-full accent-slate-900"
                     />
                   </div>
 
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="text-sm text-slate-300">Sharpening</label>
-                      <span className="text-sm font-mono text-slate-400">
+                  <div className="pb-6 border-b border-slate-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Sharpening</label>
+                      <span className="text-sm font-medium text-slate-900">
                         {Math.round(sharpenAmount * 100)}%
                       </span>
                     </div>
@@ -1017,15 +1016,15 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                       step="0.1"
                       value={sharpenAmount}
                       onChange={(e) => setSharpenAmount(Number(e.target.value))}
-                      className="w-full accent-cyan-500"
+                      className="w-full accent-slate-900"
                     />
                   </div>
                 </>
               )}
 
               {/* Output Format */}
-              <div className="pt-4 border-t border-slate-800">
-                <label className="text-sm text-slate-300 mb-3 block">
+              <div className="pb-6 border-b border-slate-200">
+                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3 block">
                   Output Format
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -1033,8 +1032,8 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     onClick={() => setOutputFormat("png")}
                     className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
                       outputFormat === "png"
-                        ? "bg-slate-700 text-white ring-2 ring-slate-500"
-                        : "bg-slate-800/50 text-slate-400 hover:bg-slate-800"
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
                     PNG
@@ -1043,8 +1042,8 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     onClick={() => setOutputFormat("jpeg")}
                     className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
                       outputFormat === "jpeg"
-                        ? "bg-slate-700 text-white ring-2 ring-slate-500"
-                        : "bg-slate-800/50 text-slate-400 hover:bg-slate-800"
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
                   >
                     JPEG
@@ -1054,23 +1053,23 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
               {/* Size Estimate */}
               {originalDims && (selectedModel === "apollo" || selectedModel === "athena") && (
-                <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/50">
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <div className="text-xs space-y-1">
-                    <div className="flex justify-between text-slate-400">
+                    <div className="flex justify-between text-slate-600">
                       <span>Output Size:</span>
-                      <span className="font-mono">
+                      <span className="font-mono text-slate-900">
                         {originalDims.w * scale} × {originalDims.h * scale}
                       </span>
                     </div>
-                    <div className="flex justify-between text-slate-400">
+                    <div className="flex justify-between text-slate-600">
                       <span>Est. File Size:</span>
                       <span
                         className={`font-mono ${
                           estimatedSize > 100
-                            ? "text-amber-400"
+                            ? "text-amber-600"
                             : estimatedSize > 250
-                            ? "text-red-400"
-                            : "text-emerald-400"
+                            ? "text-red-600"
+                            : "text-emerald-600"
                         }`}
                       >
                         ~{estimatedSize}MB
@@ -1083,12 +1082,12 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
             {/* Failed Entry Warning */}
             {isCurrentEntryFailed && (
-              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-                <div className="flex items-center gap-2 text-red-400 mb-2">
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                <div className="flex items-center gap-2 text-red-700 mb-2">
                   <AlertCircle className="w-4 h-4" />
                   <span className="text-sm font-semibold">Enhancement Failed</span>
                 </div>
-                <p className="text-xs text-red-300">
+                <p className="text-xs text-red-600">
                   {currentEntry?.error || "This enhancement failed. Navigate to a successful entry or the original to try again."}
                 </p>
               </div>
@@ -1096,20 +1095,20 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
             {/* Cost Estimate */}
             {currentDims && !isCurrentEntryFailed && (
-              <div className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/50">
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs text-slate-400">Estimated Cost:</div>
+                  <div className="text-xs text-slate-600">Estimated Cost:</div>
                   <div className="flex items-center gap-1.5">
-                    <Coins className="w-3.5 h-3.5 text-emerald-400" />
+                    <Coins className="w-3.5 h-3.5 text-emerald-600" />
                     <span className={`text-sm font-bold font-mono ${
-                      credits >= enhancementCost ? "text-emerald-400" : "text-red-400"
+                      credits >= enhancementCost ? "text-emerald-600" : "text-red-600"
                     }`}>
                       {enhancementCost} Cr
                     </span>
                   </div>
                 </div>
                 {credits < enhancementCost && (
-                  <div className="mt-2 text-[10px] text-red-400 flex items-center gap-1">
+                  <div className="mt-2 text-[10px] text-red-600 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     Insufficient credits
                   </div>
@@ -1117,15 +1116,15 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
               </div>
             )}
 
-            {/* Enhance Button */}
-            <div className="pt-4 border-t border-slate-800">
+            {/* Enhance Button (Topaz Photo style - white theme) */}
+            <div className="pt-4 border-t border-slate-200">
               <button
                 onClick={handleEnhance}
                 disabled={!canEnhance}
-                className={`w-full py-4 rounded-xl font-semibold text-white transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`w-full py-4 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                   isCurrentEntryProcessing || isSubmitting
-                    ? "bg-slate-700"
-                    : `bg-gradient-to-r ${model.color} hover:shadow-2xl hover:scale-[1.02]`
+                    ? "bg-slate-200 text-slate-600"
+                    : "bg-slate-900 text-white hover:bg-slate-800"
                 }`}
               >
                 {isCurrentEntryProcessing || isSubmitting ? (
@@ -1135,7 +1134,6 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                   </span>
                 ) : (
                   <span className="flex items-center justify-center gap-2">
-                    <Zap className="w-5 h-5" />
                     Enhance with {model.name}
                   </span>
                 )}
@@ -1147,7 +1145,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
         {/* Image Viewer - RIGHT SIDE */}
         <div
           ref={imageContainerRef}
-          className="flex-1 flex items-center justify-center bg-slate-950/50 relative overflow-hidden"
+          className="flex-1 flex items-center justify-center bg-slate-100 relative overflow-hidden"
           style={{ cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default' }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -1160,15 +1158,15 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                 onClick={() => fileInputRef.current?.click()}
                 className="group relative"
               >
-                <div className="w-64 h-64 rounded-2xl border-2 border-dashed border-slate-700 hover:border-slate-500 transition-all flex flex-col items-center justify-center gap-4 bg-slate-900/50 hover:bg-slate-800/50 cursor-pointer">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Upload className="w-8 h-8 text-slate-300" />
+                <div className="w-64 h-64 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 transition-all flex flex-col items-center justify-center gap-4 bg-white hover:bg-slate-50 cursor-pointer">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Upload className="w-8 h-8 text-slate-600" />
                   </div>
                   <div>
-                    <div className="text-lg font-semibold text-slate-200">
+                    <div className="text-lg font-semibold text-slate-900">
                       Upload Image
                     </div>
-                    <div className="text-sm text-slate-400 mt-1">
+                    <div className="text-sm text-slate-500 mt-1">
                       or drag and drop
                     </div>
                   </div>
@@ -1177,7 +1175,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
             </div>
           ) : (
             <>
-              <div className="absolute inset-0 p-8 flex items-center justify-center overflow-hidden">
+              <div className="absolute inset-0 p-4 flex items-center justify-center overflow-hidden">
                 {/* Show comparison modes only if we have a result AND not currently processing */}
                 {resultImage && activeProject && activeProject.currentIndex > 0 && !isCurrentEntryProcessing ? (
                   <div className="w-full h-full relative flex items-center justify-center">
@@ -1205,18 +1203,32 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                           transition: isPanning ? 'none' : 'transform 0.2s'
                         }}
                       >
-                        <div className="flex-1 flex items-center justify-center max-h-full">
+                        <div className="flex-1 flex items-center justify-center" style={{ maxHeight: '100%' }}>
                           <img
                             src={originalImage}
                             alt="Before"
-                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                            className="rounded-lg shadow-2xl"
+                            style={{
+                              maxWidth: '100%',
+                              maxHeight: '100%',
+                              width: 'auto',
+                              height: 'auto',
+                              objectFit: 'contain'
+                            }}
                           />
                         </div>
-                        <div className="flex-1 flex items-center justify-center max-h-full">
+                        <div className="flex-1 flex items-center justify-center" style={{ maxHeight: '100%' }}>
                           <img
                             src={resultImage}
                             alt="After"
-                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                            className="rounded-lg shadow-2xl"
+                            style={{
+                              maxWidth: '100%',
+                              maxHeight: '100%',
+                              width: 'auto',
+                              height: 'auto',
+                              objectFit: 'contain'
+                            }}
                           />
                         </div>
                       </div>
@@ -1228,8 +1240,13 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                       <img
                         src={currentImage}
                         alt="Current"
-                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                        className="rounded-lg shadow-2xl"
                         style={{
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          width: 'auto',
+                          height: 'auto',
+                          objectFit: 'contain',
                           transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
                           transformOrigin: 'center center',
                           transition: isPanning ? 'none' : 'transform 0.2s',
@@ -1260,19 +1277,19 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                           </div>
                         </div>
 
-                        {/* Center Progress Indicator */}
+                        {/* Center Progress Indicator (white theme) */}
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="text-center bg-slate-900/80 backdrop-blur-md px-8 py-6 rounded-2xl border border-slate-700/50 shadow-2xl">
-                            <Loader2 className="w-16 h-16 animate-spin mx-auto mb-4 text-white" />
-                            <div className="text-lg font-semibold mb-2">
+                          <div className="text-center bg-white/95 backdrop-blur-md px-8 py-6 rounded-2xl border border-slate-200 shadow-2xl">
+                            <Loader2 className="w-16 h-16 animate-spin mx-auto mb-4 text-slate-900" />
+                            <div className="text-lg font-semibold mb-2 text-slate-900">
                               Enhancing with {model.name}...
                             </div>
-                            <div className="text-sm text-slate-300 mb-4">
+                            <div className="text-sm text-slate-600 mb-4">
                               {progress}% complete
                             </div>
-                            <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
                               <div
-                                className={`h-full bg-gradient-to-r ${model.color} transition-all duration-300 shadow-lg`}
+                                className="h-full bg-slate-900 transition-all duration-300"
                                 style={{ width: `${progress}%` }}
                               />
                             </div>
@@ -1286,14 +1303,14 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
               {/* Dimension Labels Overlay - Bottom Right */}
               {currentDims && (
-                <div className="absolute bottom-8 right-8 bg-slate-900/90 backdrop-blur-md border border-slate-700 rounded-lg px-4 py-2 shadow-xl z-10">
+                <div className="absolute bottom-8 right-8 bg-white/90 backdrop-blur-md border border-slate-200 rounded-lg px-4 py-2 shadow-xl z-10">
                   <div className="flex items-center gap-3">
-                    <ImageIcon className="w-4 h-4 text-slate-400" />
+                    <ImageIcon className="w-4 h-4 text-slate-600" />
                     <div>
-                      <div className="text-sm font-mono text-white font-medium">
+                      <div className="text-sm font-mono text-slate-900 font-medium">
                         {currentDims.w} × {currentDims.h}
                       </div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-slate-500">
                         {Math.round((currentDims.w * currentDims.h) / 1_000_000)}MP
                       </div>
                     </div>
@@ -1301,91 +1318,81 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                 </div>
               )}
 
-              {/* Floating Control Panel - Bottom */}
+              {/* Floating Control Panel - Bottom Center (moved from right) */}
               {originalImage && (
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
-                  <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur-md border border-slate-700 rounded-lg p-2 shadow-2xl">
-                    {/* Zoom Controls */}
-                    <div className="flex items-center gap-1 px-2 border-r border-slate-700">
-                      <button
-                        onClick={() => handleZoomChange(Math.max(0.5, zoomLevel - 0.25))}
-                        disabled={zoomLevel <= 0.5}
-                        className="p-2 hover:bg-slate-800 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="w-4 h-4" />
-                      </button>
-                      <span className="text-xs font-mono min-w-[3rem] text-center text-slate-300">
-                        {Math.round(zoomLevel * 100)}%
-                      </span>
-                      <button
-                        onClick={() => handleZoomChange(Math.min(3, zoomLevel + 0.25))}
-                        disabled={zoomLevel >= 3}
-                        className="p-2 hover:bg-slate-800 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleZoomChange(1)}
-                        className="p-2 hover:bg-slate-800 rounded transition-colors"
-                        title="Reset Zoom"
-                      >
-                        <ZoomReset className="w-4 h-4" />
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-1 bg-white/90 backdrop-blur-md border border-slate-200 rounded-lg p-1.5 shadow-xl">
+                    {/* Zoom Out */}
+                    <button
+                      onClick={() => handleZoomChange(Math.max(0.5, zoomLevel - 0.25))}
+                      disabled={zoomLevel <= 0.5}
+                      className="p-2 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-slate-700"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
 
-                    {/* History Navigation */}
+                    {/* Zoom Level */}
+                    <span className="text-xs font-mono min-w-[3rem] text-center text-slate-700 px-1">
+                      {Math.round(zoomLevel * 100)}%
+                    </span>
+
+                    {/* Zoom In */}
+                    <button
+                      onClick={() => handleZoomChange(Math.min(3, zoomLevel + 0.25))}
+                      disabled={zoomLevel >= 3}
+                      className="p-2 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-slate-700"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+
+                    {/* Fit to Screen */}
+                    <button
+                      onClick={() => handleZoomChange(1)}
+                      className="p-2 hover:bg-slate-100 rounded transition-colors text-slate-700"
+                      title="Fit to Screen"
+                    >
+                      <ZoomReset className="w-4 h-4" />
+                    </button>
+
+                    {/* Divider */}
+                    <div className="w-px h-6 bg-slate-200 mx-1"></div>
+
+                    {/* Undo */}
                     {activeProject && (
-                      <div className="flex items-center gap-1 px-2 border-r border-slate-700">
+                      <>
                         <button
                           onClick={handleUndoWithReset}
                           disabled={!canUndo}
-                          className="p-2 hover:bg-slate-800 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                          title="Previous Edit"
+                          className="p-2 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-slate-700"
+                          title="Undo"
                         >
                           <Undo className="w-4 h-4" />
                         </button>
-                        <span className="text-xs font-mono min-w-[2.5rem] text-center text-slate-400">
-                          {activeProject.currentIndex + 1}/{activeProject.history.length}
-                        </span>
+
+                        {/* Redo */}
                         <button
                           onClick={handleRedoWithReset}
                           disabled={!canRedo}
-                          className="p-2 hover:bg-slate-800 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                          title="Next Edit"
+                          className="p-2 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-slate-700"
+                          title="Redo"
                         >
                           <Redo className="w-4 h-4" />
                         </button>
-                      </div>
-                    )}
 
-                    {/* Comparison Mode Toggle (only show if we have a result) */}
-                    {resultImage && activeProject && activeProject.currentIndex > 0 && !isCurrentEntryProcessing && (
-                      <div className="flex items-center gap-1 px-2">
+                        {/* Divider */}
+                        <div className="w-px h-6 bg-slate-200 mx-1"></div>
+
+                        {/* History Button */}
                         <button
-                          onClick={() => setComparisonMode("slider")}
-                          className={`p-2 rounded transition-colors ${
-                            comparisonMode === "slider"
-                              ? "bg-slate-700 text-white"
-                              : "hover:bg-slate-800 text-slate-400"
-                          }`}
-                          title="Slider Comparison"
+                          onClick={() => setShowHistory(true)}
+                          className="p-2 hover:bg-slate-100 rounded transition-colors text-slate-700"
+                          title="History"
                         >
-                          <SlidersHorizontal className="w-4 h-4" />
+                          <Clock className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => setComparisonMode("sidebyside")}
-                          className={`p-2 rounded transition-colors ${
-                            comparisonMode === "sidebyside"
-                              ? "bg-slate-700 text-white"
-                              : "hover:bg-slate-800 text-slate-400"
-                          }`}
-                          title="Side by Side"
-                        >
-                          <Columns2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1393,12 +1400,12 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
 
               {/* Error Overlay */}
               {error && (
-                <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-red-500/90 backdrop-blur-md rounded-lg px-6 py-4 border border-red-400/50 shadow-xl max-w-md z-10">
+                <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-red-50 backdrop-blur-md rounded-lg px-6 py-4 border border-red-300 shadow-xl max-w-md z-10">
                   <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600" />
                     <div>
-                      <div className="font-semibold mb-1">Enhancement Failed</div>
-                      <div className="text-sm text-red-100">{error}</div>
+                      <div className="font-semibold mb-1 text-red-900">Enhancement Failed</div>
+                      <div className="text-sm text-red-700">{error}</div>
                     </div>
                   </div>
                 </div>
@@ -1407,12 +1414,12 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
           )}
         </div>
 
-        {/* History Sidebar - RIGHT COLUMN */}
-        {activeProject && showHistory && (
+        {/* History Sidebar - REMOVED (moved to modal) */}
+        {/* {activeProject && showHistory && (
           <div className="w-64 border-l border-slate-800/50 bg-slate-900/50 backdrop-blur-sm overflow-y-auto overflow-x-hidden">
             <div className="p-3 space-y-4">
               {/* Project Info */}
-              <div>
+              {/* <div>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
                     <Clock className="w-4 h-4" />
@@ -1431,10 +1438,10 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                 <div className="text-xs text-slate-500">
                   {activeProject.originalDims.w} × {activeProject.originalDims.h}
                 </div>
-              </div>
+              </div> */}
 
-              {/* History Timeline - Simplified Linear View (Figma-style) */}
-              <div className="space-y-1.5">
+              {/* History Timeline - COMMENTED OUT - will be moved to modal */}
+              {/* <div className="space-y-1.5">
                 {(() => {
                   // Branch color mapping
                   const branchColors: Record<string, string> = {
@@ -1484,7 +1491,7 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     return (
                       <div key={entry.id}>
                         {/* Branch Header (Figma-style section) */}
-                        {showBranchHeader && (
+                        {/* {showBranchHeader && (
                           <div className="flex items-center gap-2 px-2 py-1.5 mb-1">
                             <div className={`w-2 h-2 rounded-full ${branchColor}`}></div>
                             <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
@@ -1492,10 +1499,10 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                             </div>
                             <div className="flex-1 h-px bg-slate-800"></div>
                           </div>
-                        )}
+                        )} */}
 
                         {/* History Entry */}
-                        <button
+                        {/* <button
                           onClick={() => jumpToHistoryEntryWithReset(index)}
                           className={`w-full text-left p-2.5 rounded-lg transition-all group ${
                             isFailed
@@ -1507,13 +1514,13 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                         >
                           <div className="flex items-start gap-2.5">
                             {/* Icon/Emoji */}
-                            <div className="flex-shrink-0 w-8 h-8 rounded-md bg-slate-800/50 flex items-center justify-center text-base group-hover:scale-105 transition-transform">
+                            {/* <div className="flex-shrink-0 w-8 h-8 rounded-md bg-slate-800/50 flex items-center justify-center text-base group-hover:scale-105 transition-transform">
                               {modelData ? modelData.emoji : "📷"}
                             </div>
 
                             <div className="flex-1 min-w-0">
                               {/* Entry Name */}
-                              <div className="flex items-center gap-2 mb-1">
+                              {/* <div className="flex items-center gap-2 mb-1">
                                 <span className={`text-sm font-medium truncate ${
                                   isCurrent ? "text-white" : "text-slate-300"
                                 }`}>
@@ -1530,33 +1537,33 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                                 {isCurrent && !isFailed && !isProcessing && (
                                   <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                                 )}
-                              </div>
+                              </div> */}
 
                               {/* Metadata Row */}
-                              <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                              {/* <div className="flex items-center gap-2 text-[10px] text-slate-500">
                                 {/* Dimensions */}
-                                {entry.outputDims && (
+                                {/* {entry.outputDims && (
                                   <span className="font-mono">
                                     {entry.outputDims.w} × {entry.outputDims.h}
                                   </span>
-                                )}
+                                )} */}
 
                                 {/* Separator */}
-                                {entry.outputDims && (
+                                {/* {entry.outputDims && (
                                   <span>•</span>
-                                )}
+                                )} */}
 
                                 {/* Time */}
-                                <span>
+                                {/* <span>
                                   {entry.timestamp.toLocaleTimeString([], {
                                     hour: "2-digit",
                                     minute: "2-digit",
                                   })}
                                 </span>
-                              </div>
+                              </div> */}
 
                               {/* Branch Badge (inline, Figma-style) */}
-                              {entry.branchName && entry.branchName !== "Main" && (
+                              {/* {entry.branchName && entry.branchName !== "Main" && (
                                 <div className="flex items-center gap-1 mt-1">
                                   <div className={`px-1.5 py-0.5 rounded ${branchColor} bg-opacity-20 flex items-center gap-1`}>
                                     <div className={`w-1 h-1 rounded-full ${branchColor}`}></div>
@@ -1573,10 +1580,10 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                     );
                   });
                 })()}
-              </div>
+              </div> */}
 
               {/* Project Switcher (if multiple projects) */}
-              {projects.length > 1 && (
+              {/* {projects.length > 1 && (
                 <div className="pt-4 border-t border-slate-800">
                   <div className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
                     Other Projects
@@ -1601,19 +1608,140 @@ export default function PlaygroundTest({ initialCredits = 0 }: { initialCredits?
                       ))}
                   </div>
                 </div>
-              )}
-            </div>
+              )} */}
+            {/* </div>
           </div>
-        )}
+        )} */}
 
-        {/* Show History Toggle (when hidden) */}
-        {activeProject && !showHistory && (
-          <button
-            onClick={() => setShowHistory(true)}
-            className="absolute right-4 top-24 p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors shadow-lg"
-          >
-            <Clock className="w-4 h-4" />
-          </button>
+        {/* History Modal (slide-in drawer) */}
+        {activeProject && showHistory && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/50 z-40"
+              onClick={() => setShowHistory(false)}
+            />
+
+            {/* Modal */}
+            <div className="fixed right-0 top-0 bottom-0 w-80 bg-white shadow-2xl z-50 overflow-y-auto">
+              <div className="p-4 space-y-4">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    Edit History
+                  </h3>
+                  <button
+                    onClick={() => setShowHistory(false)}
+                    className="p-1 hover:bg-slate-100 rounded transition-colors"
+                  >
+                    <X className="w-4 h-4 text-slate-600" />
+                  </button>
+                </div>
+
+                {/* Project Info */}
+                <div>
+                  <div className="text-xs text-slate-600 mb-1 truncate" title={activeProject.name}>
+                    {activeProject.name}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {activeProject.originalDims.w} × {activeProject.originalDims.h}
+                  </div>
+                </div>
+
+                {/* Current Project History */}
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
+                    Current Project History
+                  </div>
+                  <div className="space-y-2">
+                    {activeProject.history.map((entry, index) => {
+                      const isCurrent = index === activeProject.currentIndex;
+                      const modelData = PANTHEON_MODELS.find((m) => m.id === entry.modelId);
+                      const isFailed = entry.status === "failed" || entry.status === "error";
+                      const isProcessing = entry.status === "processing";
+
+                      return (
+                        <button
+                          key={entry.id}
+                          onClick={() => jumpToHistoryEntryWithReset(index)}
+                          className={`w-full text-left p-3 rounded-lg transition-all ${
+                            isFailed
+                              ? "bg-red-50 border border-red-200"
+                              : isCurrent
+                              ? "bg-slate-100 border border-slate-300"
+                              : "hover:bg-slate-50 border border-slate-200"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className="text-lg">{modelData ? modelData.emoji : "📷"}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-sm font-medium truncate ${
+                                  isCurrent ? "text-slate-900" : "text-slate-700"
+                                }`}>
+                                  {entry.label}
+                                </span>
+                                {isFailed && (
+                                  <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
+                                    FAILED
+                                  </span>
+                                )}
+                                {isProcessing && (
+                                  <Loader2 className="w-3 h-3 text-slate-600 animate-spin" />
+                                )}
+                              </div>
+                              {entry.outputDims && (
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  {entry.outputDims.w} × {entry.outputDims.h}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* All Projects */}
+                {projects.length > 1 && (
+                  <div className="pt-4 border-t border-slate-200">
+                    <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
+                      All Projects
+                    </div>
+                    <div className="space-y-2">
+                      {projects.map((project) => {
+                        const isActive = project.id === activeProjectId;
+                        return (
+                          <button
+                            key={project.id}
+                            onClick={() => setActiveProjectId(project.id)}
+                            className={`w-full text-left p-3 rounded-lg transition-all border ${
+                              isActive
+                                ? "bg-slate-100 border-slate-300"
+                                : "hover:bg-slate-50 border-slate-200"
+                            }`}
+                          >
+                            <div className="text-sm font-medium text-slate-900 truncate mb-1">
+                              {project.name}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-slate-500">
+                              <span className="font-mono">
+                                {project.originalDims.w} × {project.originalDims.h}
+                              </span>
+                              <span>•</span>
+                              <span>{project.history.length} edit{project.history.length !== 1 ? 's' : ''}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

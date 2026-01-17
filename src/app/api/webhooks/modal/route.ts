@@ -64,12 +64,19 @@ export async function POST(req: Request) {
       }
 
       console.log(`✅ Marking job as done with resultUrl: ${resultUrl}`);
-      
+
+      // Transform meta dimensions from {width, height} to {w, h} format
+      const resultDims = meta && meta.width && meta.height
+        ? { w: meta.width, h: meta.height }
+        : null;
+
+      console.log(`📐 Result dimensions:`, resultDims);
+
       await jobRef.update({
         status: "done",
         progress: 100,
         resultUrl: resultUrl,
-        resultDims: meta || null,
+        resultDims: resultDims,
         completedAt: FieldValue.serverTimestamp(),
       });
       
